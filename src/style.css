@@ -132,3 +132,15 @@ a { color: inherit; }
   .panel { border-right: 0; border-bottom: 1px solid var(--line); overflow: visible; }
   .top { gap: 12px; padding: 10px 16px; }
 }
+
+/* Cadre sur la carte */
+.btnrow { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.leaflet-interactive.frame-body { cursor: move; }
+.fh {
+  background: #fff; border: 2px solid #b45309; border-radius: 3px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .35);
+}
+.fh.fh-c {
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 14px; line-height: 1; color: #b45309;
+}

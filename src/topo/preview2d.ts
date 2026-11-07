@@ -16,12 +16,12 @@ export function woodColor(i: number, n: number, water = false): string {
 }
 
 /** Vue d'ensemble : toutes les couches empilées, vues de dessus */
-export function svgStack(r: TopoResult, water: boolean): string {
+export function svgStack(r: TopoResult, water: boolean, margin = 2): string {
   const n = r.layers.length;
   const body = r.layers
     .map((L, i) => `<path d="${mpPath(L.pieces, r.H)}" fill="${woodColor(i, n, water)}" fill-rule="evenodd" stroke="rgba(60,35,15,.55)" stroke-width="0.25"/>`)
     .join('');
-  return `<svg viewBox="-2 -2 ${r.W + 4} ${r.H + 4}" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
+  return `<svg viewBox="${-margin} ${-margin} ${r.W + 2 * margin} ${r.H + 2 * margin}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
 }
 
 /** Une seule couche avec ses opérations (rouge = découpe, sombre = gravure) */

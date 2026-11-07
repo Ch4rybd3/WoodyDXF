@@ -4,7 +4,7 @@ import { downloadBlob, slug } from '../core/download';
 import { fetchElevationGrid, type ElevGrid } from './elevation';
 import { buildZip } from './export';
 import { computeLayers, type TopoParams, type TopoResult } from './layers';
-import { frameBounds, makeFrame } from './mercator';
+import { EARTH_CIRC, frameBounds, lonLatToWorld, makeFrame, worldToLonLat, type WorldFrame } from './mercator';
 import { svgLayer, svgStack } from './preview2d';
 import type { Preview3D } from './preview3d';
 
@@ -71,7 +71,12 @@ export function mountTopo(root: HTMLElement): () => void {
           <button class="btn" type="submit">Chercher</button>
         </form>
         <ul class="results" id="results"></ul>
-        <p class="hint">Déplace la carte : le cadre suit le centre. <span id="center"></span></p>
+        <p class="hint">Fais glisser le cadre pour le déplacer. Poignées des coins : agrandir en gardant les proportions. Poignées des côtés : changer la hauteur du format.</p>
+        <p class="hint" id="center"></p>
+        <div class="btnrow">
+          <button class="btn ghost small" id="fitView" type="button">Cadre au centre de la vue</button>
+          <button class="btn ghost small" id="showFrame" type="button">Voir le cadre</button>
+        </div>
       </section>
       <section>
         <h3>2 · Cadre et format</h3>
@@ -87,7 +92,6 @@ export function mountTopo(root: HTMLElement): () => void {
           <label class="field"><span>Largeur réelle</span><div class="inp"><input type="number" id="realKm" step="0.1" min="0.1"/><em>km</em></div></label>
           <label class="field"><span>Échelle 1:</span><div class="inp"><input type="number" id="scale" step="500" min="100"/></div></label>
         </div>
-        <button class="btn ghost small" id="fitView" type="button">Ajuster le cadre à la vue</button>
       </section>
       <section>
         <h3>3 · Couches</h3>
@@ -129,7 +133,8 @@ export function mountTopo(root: HTMLElement): () => void {
         </label>
         ${check('Repères de pose (contour de la couche du dessus)', 'guides')}
         ${check('Numéros de couche (cachés sous la couche suivante)', 'numbers')}
-        ${check('Fond en bleu (eau / résine) dans l’aperçu', 'water')}
+        ${check('Couche de fond en bleu (eau / résine) dans l’aperçu', 'water')}
+        <label class="check"><input type="checkbox" id="overlay" checked/> <span>Superposer le résultat sur la carte</span></label>
       </section>
       <div class="actions">
         <button class="btn primary" id="go" type="button">Calculer les couches</button>
@@ -178,26 +183,159 @@ export function mountTopo(root: HTMLElement): () => void {
   L.control.layers({ 'Relief (OpenTopoMap)': topo, 'Plan (OpenStreetMap)': osm }).addTo(map);
   map.attributionControl.addAttribution('Relief : Mapzen / AWS Terrain Tiles');
 
-  let overlay: L.Layer | null = null;
-  const H = () => (s.shape === 'circle' ? s.widthMm : s.heightMm);
-  const drawFrame = () => {
-    overlay?.remove();
-    const style = { color: '#b45309', weight: 2, fillOpacity: 0.08, interactive: false };
-    if (s.shape === 'circle') overlay = L.circle([s.lat, s.lon], { radius: s.realWidthM / 2, ...style });
-    else overlay = L.rectangle(frameBounds(makeFrame(s.lon, s.lat, s.realWidthM, H() / s.widthMm)), style);
-    overlay.addTo(map);
-    $('#center').textContent = `Centre : ${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}`;
-  };
-  map.on('move', () => {
-    const c = map.getCenter();
-    s.lat = c.lat;
-    s.lon = c.lng;
-    drawFrame();
+  // la carte doit connaître sa vraie taille, sinon le cadre est mal placé à l'écran
+  let fitted = false;
+  const mapRO = new ResizeObserver(() => {
+    // onglet masqué (taille nulle) : on ignore, sinon Leaflet décale la vue au retour
+    if ($('#map').clientWidth < 10 || $('#map').clientHeight < 10) return;
+    map.invalidateSize({ pan: false });
+    // premier affichage : on cadre la carte sur le cadre dès que la carte a une vraie taille
+    if (!fitted && $('#map').clientHeight > 100) {
+      fitted = true;
+      map.fitBounds(frameBounds(curFrame()), { padding: [40, 40], animate: false });
+    }
   });
-  map.on('moveend', () => { saveState(s); markDirty(); });
+  mapRO.observe($('#map'));
+
+  // ---------- Cadre déplaçable / redimensionnable ----------
+  // Le cadre est un objet géographique indépendant de la vue : on le manipule en coordonnées monde (Web Mercator).
+  const H = () => (s.shape === 'circle' ? s.widthMm : s.heightMm);
+  const curFrame = (): WorldFrame => makeFrame(s.lon, s.lat, s.realWidthM, H() / s.widthMm);
+  const toLL = (x: number, y: number) => { const [lon, lat] = worldToLonLat(x, y); return L.latLng(lat, lon); };
+  const toW = (ll: L.LatLng) => lonLatToWorld(ll.lng, ll.lat);
+
+  /** Applique un cadre exprimé en coordonnées monde ; `aspect` = la proportion du format change */
+  const setFrameWorld = (cx: number, cy: number, hw: number, hh: number, aspect: boolean) => {
+    const [lon, lat] = worldToLonLat(cx, cy);
+    s.lat = lat;
+    s.lon = lon;
+    s.realWidthM = Math.max(50, 2 * hw * EARTH_CIRC * Math.cos((lat * Math.PI) / 180));
+    if (aspect && s.shape === 'rect') s.heightMm = Math.max(50, Math.min(3000, Math.round((s.widthMm * hh) / hw)));
+  };
+
+  let framePoly: L.Polygon | null = null;
+  const handles = new Map<string, L.Marker>();
+  let activeHandle = '';
+  let dragStart: WorldFrame | null = null;
+
+  const handlePositions = (f: WorldFrame): Record<string, [number, number]> =>
+    s.shape === 'circle'
+      ? { c: [f.cx, f.cy], e: [f.cx + f.hw, f.cy] }
+      : {
+          c: [f.cx, f.cy],
+          nw: [f.cx - f.hw, f.cy - f.hh], ne: [f.cx + f.hw, f.cy - f.hh],
+          se: [f.cx + f.hw, f.cy + f.hh], sw: [f.cx - f.hw, f.cy + f.hh],
+          n: [f.cx, f.cy - f.hh], s: [f.cx, f.cy + f.hh], e: [f.cx + f.hw, f.cy], w: [f.cx - f.hw, f.cy],
+        };
+
+  const CURSORS: Record<string, string> = { c: 'move', nw: 'nwse-resize', se: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize' };
+
+  /** Nouveau cadre quand la poignée `key` est amenée au point monde (px, py) */
+  const resizeFrame = (key: string, px: number, py: number, f0: WorldFrame) => {
+    const minW = f0.hw * 0.05, minH = f0.hh * 0.05;
+    if (key === 'c') return setFrameWorld(px, py, f0.hw, f0.hh, false);
+    if (s.shape === 'circle') {
+      const r = Math.max(minW, Math.hypot(px - f0.cx, py - f0.cy));
+      return setFrameWorld(f0.cx, f0.cy, r, r, false);
+    }
+    const sx = key.includes('e') ? 1 : key.includes('w') ? -1 : 0;
+    const sy = key.includes('s') ? 1 : key.includes('n') ? -1 : 0;
+    if (sx && sy) {
+      // coin : le coin opposé reste fixe, la proportion est conservée
+      const ax = f0.cx - sx * f0.hw, ay = f0.cy - sy * f0.hh;
+      const ratio = f0.hh / f0.hw;
+      const w = Math.max(2 * minW, sx * (px - ax)), h = Math.max(2 * minH, sy * (py - ay));
+      const size = (w + h / ratio) / 2;
+      return setFrameWorld(ax + (sx * size) / 2, ay + (sy * size * ratio) / 2, size / 2, (size * ratio) / 2, false);
+    }
+    if (sx) {
+      // côté gauche/droit : le côté opposé reste fixe, la proportion du format change
+      const ax = f0.cx - sx * f0.hw;
+      const w = Math.max(2 * minW, sx * (px - ax));
+      return setFrameWorld(ax + (sx * w) / 2, f0.cy, w / 2, f0.hh, true);
+    }
+    const ay = f0.cy - sy * f0.hh;
+    const h = Math.max(2 * minH, sy * (py - ay));
+    setFrameWorld(f0.cx, ay + (sy * h) / 2, f0.hw, h / 2, true);
+  };
+
+  const drawFrame = () => {
+    const f = curFrame();
+    const ring = s.shape === 'circle'
+      ? Array.from({ length: 128 }, (_, i) => {
+          const a = (i / 128) * Math.PI * 2;
+          return toLL(f.cx + f.hw * Math.cos(a), f.cy + f.hh * Math.sin(a));
+        })
+      : [toLL(f.cx - f.hw, f.cy - f.hh), toLL(f.cx + f.hw, f.cy - f.hh), toLL(f.cx + f.hw, f.cy + f.hh), toLL(f.cx - f.hw, f.cy + f.hh)];
+    if (!framePoly) {
+      framePoly = L.polygon(ring, { color: '#b45309', weight: 2, fillOpacity: 0.08, className: 'frame-body' }).addTo(map);
+      framePoly.on('mousedown', (e: L.LeafletMouseEvent) => {
+        L.DomEvent.stop(e);
+        map.dragging.disable();
+        const start = toW(e.latlng);
+        const f0 = curFrame();
+        const move = (ev: L.LeafletMouseEvent) => {
+          const p = toW(ev.latlng);
+          setFrameWorld(f0.cx + p[0] - start[0], f0.cy + p[1] - start[1], f0.hw, f0.hh, false);
+          drawFrame();
+        };
+        const up = () => {
+          map.off('mousemove', move);
+          document.removeEventListener('mouseup', up);
+          map.dragging.enable();
+          commitFrame();
+        };
+        map.on('mousemove', move);
+        document.addEventListener('mouseup', up);
+      });
+    } else framePoly.setLatLngs(ring);
+
+    const pos = handlePositions(f);
+    for (const [k, m] of handles) if (!(k in pos)) { m.remove(); handles.delete(k); }
+    for (const [k, [x, y]] of Object.entries(pos)) {
+      let m = handles.get(k);
+      if (!m) {
+        m = L.marker(toLL(x, y), {
+          draggable: true,
+          keyboard: false,
+          icon: L.divIcon({ className: `fh ${k === 'c' ? 'fh-c' : ''}`, iconSize: k === 'c' ? [22, 22] : [14, 14], html: k === 'c' ? '✥' : '' }),
+        }).addTo(map);
+        const el = m.getElement();
+        if (el) el.style.cursor = CURSORS[k];
+        m.on('dragstart', () => { activeHandle = k; dragStart = curFrame(); });
+        m.on('drag', () => {
+          const [px, py] = toW(m!.getLatLng());
+          resizeFrame(k, px, py, dragStart!);
+          drawFrame();
+          syncDerived();
+        });
+        m.on('dragend', () => { activeHandle = ''; dragStart = null; drawFrame(); commitFrame(); });
+        handles.set(k, m);
+      } else if (k !== activeHandle) m.setLatLng(toLL(x, y));
+    }
+    $('#center').textContent = `Centre : ${s.lat.toFixed(5)}, ${s.lon.toFixed(5)} · ${fmt(s.realWidthM / 1000, 2)} × ${fmt((s.realWidthM * H()) / s.widthMm / 1000, 2)} km`;
+  };
+  const commitFrame = () => { saveState(s); syncDerived(); markDirty(); };
+
+  // ---------- Superposition du résultat ----------
+  let resultOverlay: L.ImageOverlay | null = null;
+  let overlayUrl = '';
+  const showOverlay = (frame: WorldFrame | null) => {
+    resultOverlay?.remove();
+    resultOverlay = null;
+    if (overlayUrl) URL.revokeObjectURL(overlayUrl);
+    overlayUrl = '';
+    if (!frame || !result || !($('#overlay') as HTMLInputElement).checked) return;
+    overlayUrl = URL.createObjectURL(new Blob([svgStack(result, s.water, 0)],{ type: 'image/svg+xml' }));
+    resultOverlay = L.imageOverlay(overlayUrl, frameBounds(frame), { opacity: 0.65, interactive: false }).addTo(map);
+    framePoly?.bringToFront();
+  };
+  let resultFrame: WorldFrame | null = null;
 
   // ---------- Champs ----------
   const syncDerived = () => {
+    ($('[data-k="widthMm"]') as HTMLInputElement).value = String(s.widthMm);
+    ($('[data-k="heightMm"]') as HTMLInputElement).value = String(s.heightMm);
     ($('#realKm') as HTMLInputElement).value = String(+(s.realWidthM / 1000).toFixed(3));
     ($('#scale') as HTMLInputElement).value = String(Math.round((s.realWidthM * 1000) / s.widthMm));
     $$('[data-show="rect"]').forEach((e) => (e.style.display = s.shape === 'rect' ? '' : 'none'));
@@ -218,7 +356,7 @@ export function mountTopo(root: HTMLElement): () => void {
       saveState(s);
       syncDerived();
       drawFrame();
-      if (k === 'water' && result) { renderLayers(); render3d(); } else markDirty();
+      if (k === 'water' && result) { renderLayers(); render3d(); showOverlay(resultFrame); } else markDirty();
     });
   });
   $$('[data-seg]').forEach((g) => g.addEventListener('click', (e) => {
@@ -241,12 +379,17 @@ export function mountTopo(root: HTMLElement): () => void {
     saveState(s); markDirty();
   });
   $('#fitView').addEventListener('click', () => {
+    // cadre centré dans la vue actuelle, occupant 70 % de la place disponible
     const b = map.getBounds();
-    const w = map.distance([s.lat, b.getWest()], [s.lat, b.getEast()]);
-    const h = map.distance([b.getSouth(), s.lon], [b.getNorth(), s.lon]);
-    s.realWidthM = Math.round(Math.min(w * 0.8, (h * 0.8 * s.widthMm) / H()));
-    saveState(s); syncDerived(); drawFrame(); markDirty();
+    const [x0, y0] = toW(b.getNorthWest());
+    const [x1, y1] = toW(b.getSouthEast());
+    const ratio = H() / s.widthMm;
+    const hw = Math.min((x1 - x0) / 2, (y1 - y0) / 2 / ratio) * 0.7;
+    setFrameWorld((x0 + x1) / 2, (y0 + y1) / 2, hw, hw * ratio, false);
+    drawFrame(); commitFrame();
   });
+  $('#showFrame').addEventListener('click', () => map.fitBounds(frameBounds(curFrame()), { padding: [40, 40] }));
+  $('#overlay').addEventListener('change', () => showOverlay(resultFrame));
 
   const PRESETS: [string, 'rect' | 'circle', number, number][] = [
     ['20×20', 'rect', 200, 200], ['30×40', 'rect', 300, 400], ['40×30', 'rect', 400, 300],
@@ -281,10 +424,19 @@ export function mountTopo(root: HTMLElement): () => void {
         if (!b) return;
         const d = data[Number(b.dataset.i)];
         s.placeName = d.display_name.split(',')[0];
+        // le cadre englobe le lieu trouvé (marge de 15 %), en gardant le format
         const [south, north, west, east] = d.boundingbox.map(Number);
-        map.fitBounds([[south, west], [north, east]], { maxZoom: 14 });
+        const [x0, y0] = lonLatToWorld(west, north);
+        const [x1, y1] = lonLatToWorld(east, south);
+        const ratio = H() / s.widthMm;
+        const hw = Math.max((x1 - x0) / 2, (y1 - y0) / 2 / ratio, 1e-6) * 1.15;
+        const [plon, plat] = [Number(d.lon), Number(d.lat)];
+        const big = x1 - x0 > 1e-5;
+        const [cx, cy] = big ? [(x0 + x1) / 2, (y0 + y1) / 2] : lonLatToWorld(plon, plat);
+        setFrameWorld(cx, cy, big ? hw : curFrame().hw, big ? hw * ratio : curFrame().hh, false);
+        drawFrame(); commitFrame();
+        map.fitBounds(frameBounds(curFrame()), { padding: [40, 40] });
         ul.innerHTML = '';
-        saveState(s);
       };
     } catch {
       ul.innerHTML = '<li class="muted">Recherche indisponible (réseau ?).</li>';
@@ -349,7 +501,7 @@ export function mountTopo(root: HTMLElement): () => void {
   const showTab = (t: string) => {
     $$('[data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
     $$('[data-view]').forEach((v) => v.classList.toggle('on', v.dataset.view === t));
-    if (t === 'map') map.invalidateSize();
+    if (t === 'map') map.invalidateSize({ pan: false });
     if (t === '3d') render3d();
   };
   $$('[data-tab]').forEach((b) => b.addEventListener('click', () => showTab(b.dataset.tab!)));
@@ -372,6 +524,8 @@ export function mountTopo(root: HTMLElement): () => void {
       await new Promise((r) => setTimeout(r, 30));
       const t0 = performance.now();
       result = computeLayers(grid, s);
+      resultFrame = makeFrame(s.lon, s.lat, s.realWidthM, aspect);
+      showOverlay(resultFrame);
       status(`Terminé en ${((performance.now() - t0) / 1000).toFixed(1)} s.`, 'ok');
       ($('#layerSel') as HTMLInputElement).value = '1';
       renderSummary();
@@ -397,9 +551,10 @@ export function mountTopo(root: HTMLElement): () => void {
 
   syncDerived();
   drawFrame();
-  setTimeout(() => map.invalidateSize(), 50);
 
   return () => {
+    mapRO.disconnect();
+    if (overlayUrl) URL.revokeObjectURL(overlayUrl);
     p3d?.dispose();
     map.remove();
   };
