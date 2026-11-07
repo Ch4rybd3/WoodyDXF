@@ -4,6 +4,8 @@ import { downloadBlob, slug } from '../core/download';
 import { fetchElevationGrid, type ElevGrid } from './elevation';
 import { buildZip } from './export';
 import { computeLayers, type TopoParams, type TopoResult } from './layers';
+import { fetchWater } from './water';
+import { circlePolygon, rectPolygon, type MultiPolygon } from '../core/geometry';
 import { EARTH_CIRC, frameBounds, lonLatToWorld, makeFrame, worldToLonLat, type WorldFrame } from './mercator';
 import { svgLayer, svgStack } from './preview2d';
 import type { Preview3D } from './preview3d';
@@ -41,6 +43,7 @@ const DEFAULTS: TopoState = {
   numbers: true,
   resolution: 500,
   water: true,
+  waterDepth: 1,
 };
 
 function loadState(): TopoState {
@@ -124,7 +127,20 @@ export function mountTopo(root: HTMLElement): () => void {
         ${check('Supprimer les pièces plus fines que la fraise', 'removeThin')}
       </section>
       <section>
-        <h3>5 · Gravures</h3>
+        <h3>5 · Eau</h3>
+        ${check('Intégrer lacs, retenues et rivières (OpenStreetMap)', 'water')}
+        <label class="field"><span>Profondeur de l’eau</span>
+          <select data-k="waterDepth">
+            <option value="0">À fleur (surface plane, sans creux)</option>
+            <option value="1">Creusée d’1 couche</option>
+            <option value="2">Creusée de 2 couches</option>
+            <option value="3">Creusée de 3 couches</option>
+          </select>
+        </label>
+        <p class="hint">L’eau est aplatie à son altitude réelle, découpée au contour exact du rivage, et exportée à part (eau.dxf) pour une pièce teintée ou de la résine.</p>
+      </section>
+      <section>
+        <h3>6 · Gravures</h3>
         <label class="field"><span>Courbes fines gravées par couche</span>
           <select data-k="fineLines">
             <option value="0">Aucune</option><option value="2">1 courbe</option><option value="3">2 courbes</option>
@@ -133,7 +149,6 @@ export function mountTopo(root: HTMLElement): () => void {
         </label>
         ${check('Repères de pose (contour de la couche du dessus)', 'guides')}
         ${check('Numéros de couche (cachés sous la couche suivante)', 'numbers')}
-        ${check('Couche de fond en bleu (eau / résine) dans l’aperçu', 'water')}
         <label class="check"><input type="checkbox" id="overlay" checked/> <span>Superposer le résultat sur la carte</span></label>
       </section>
       <div class="actions">
@@ -356,7 +371,7 @@ export function mountTopo(root: HTMLElement): () => void {
       saveState(s);
       syncDerived();
       drawFrame();
-      if (k === 'water' && result) { renderLayers(); render3d(); showOverlay(resultFrame); } else markDirty();
+      markDirty();
     });
   });
   $$('[data-seg]').forEach((g) => g.addEventListener('click', (e) => {
@@ -509,21 +524,38 @@ export function mountTopo(root: HTMLElement): () => void {
   $('#go').addEventListener('click', async () => {
     const go = $('#go') as HTMLButtonElement;
     go.disabled = true;
+    let waterError = false;
     try {
       const aspect = H() / s.widthMm;
       const n = aspect <= 1 ? s.resolution : Math.round(s.resolution / aspect);
       const m = Math.max(10, Math.round(n * aspect));
       const key = [s.lat.toFixed(6), s.lon.toFixed(6), s.realWidthM, aspect, n].join('|');
+      // l'eau (OpenStreetMap) est demandée en parallèle du relief
+      const Wmm = s.widthMm, Hmm = H();
+      const fp = s.shape === 'circle' ? circlePolygon(Wmm / 2, Hmm / 2, Wmm / 2) : rectPolygon(Wmm, Hmm);
+      const waterP = s.water
+        ? fetchWater(makeFrame(s.lon, s.lat, s.realWidthM, aspect), Wmm, Hmm, fp, s.minPieceMm2).catch((err) => {
+            console.warn(err);
+            waterError = true;
+            return [] as MultiPolygon;
+          })
+        : null;
       if (!grid || key !== gridKey) {
         const frame = makeFrame(s.lon, s.lat, s.realWidthM, aspect);
         status('Téléchargement du relief…');
         grid = await fetchElevationGrid(frame, n, m, 2, s.lat, (d, t) => status(`Téléchargement du relief… ${d}/${t} tuiles`));
         gridKey = key;
       }
+      const t0 = performance.now();
+      let water: MultiPolygon = [];
+      if (waterP) {
+        status('Récupération de l’eau (OpenStreetMap, jusqu’à 30 s la première fois)…');
+        water = await waterP;
+      }
       status('Calcul des courbes de niveau…');
       await new Promise((r) => setTimeout(r, 30));
-      const t0 = performance.now();
-      result = computeLayers(grid, s);
+      result = computeLayers(grid, s, water);
+      if (waterError) result.warnings.push('Eau OpenStreetMap indisponible (service saturé ?) : réessaie dans un instant.');
       resultFrame = makeFrame(s.lon, s.lat, s.realWidthM, aspect);
       showOverlay(resultFrame);
       status(`Terminé en ${((performance.now() - t0) / 1000).toFixed(1)} s.`, 'ok');

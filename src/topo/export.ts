@@ -37,6 +37,12 @@ export async function buildZip(r: TopoResult, p: TopoParams, placeName: string, 
   const folder = zip.folder('couches')!;
   for (const L of r.layers) folder.file(`couche-${pad(L.index)}.dxf`, layerDxf(L));
   zip.file('toutes-les-couches.dxf', allLayersDxf(r));
+  if (r.water.length) {
+    // pièce d'eau (bois teinté) ou gabarit pour la résine
+    const d = new DxfWriter();
+    writeLayer(d, r.water.map((b) => b.poly), [], []);
+    zip.file('eau.dxf', d.toString());
+  }
   const lines = [
     'WoodyDXF — Tableau en relief',
     '============================',
@@ -60,6 +66,14 @@ export async function buildZip(r: TopoResult, p: TopoParams, placeName: string, 
     '  INFO         cadre indicatif (non usiné)',
     '',
     'Montage : coller chaque couche N sur la couche N-1 en suivant le repère gravé.',
+    ...(r.water.length
+      ? [
+          '',
+          `Eau (OpenStreetMap) : ${r.water.length} surface(s), fichier eau.dxf.`,
+          ...r.water.map((b) => `  surface ${Math.round(b.surface)} m, posée sur la couche ${String(b.layerIndex).padStart(2, '0')} (rivage gravé)`),
+          '  eau.dxf : pièce en bois teinté à découper, ou gabarit pour couler la résine.',
+        ]
+      : []),
     '',
     ...r.warnings.map((w) => `Attention : ${w}`),
     '',

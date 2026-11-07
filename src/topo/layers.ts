@@ -3,7 +3,7 @@ import { contours } from 'd3-contour';
 import polylabel from 'polylabel';
 import {
   type MultiPolygon, type Polygon, type Polyline, type Pt,
-  circlePolygon, intersect, polygonArea, rectPolygon, ringLength, simplifyRing, splitPolyline, openRing, ringArea,
+  circlePolygon, difference, intersect, union, polygonArea, rectPolygon, ringLength, simplifyRing, splitPolyline, openRing, ringArea,
 } from '../core/geometry';
 import { strokeText, textUnits } from '../core/font';
 import { gaussianBlur, type ElevGrid } from './elevation';
@@ -25,8 +25,21 @@ export interface TopoParams {
   toolMm: number;
   removeThin: boolean;
   fineLines: number;
+  /** profondeur de l'eau, en nombre de couches sous sa surface */
+  waterDepth: number;
   guides: boolean;
   numbers: boolean;
+}
+
+export interface WaterBody {
+  /** contour de l'eau (mm) */
+  poly: Polygon;
+  /** altitude de la surface (m) */
+  surface: number;
+  /** altitude du fond creusé (m) */
+  bottom: number;
+  /** couche sur laquelle repose l'eau */
+  layerIndex: number;
 }
 
 export interface TopoLayer {
@@ -54,11 +67,33 @@ export interface TopoResult {
   totalPieces: number;
   cutLengthMm: number;
   warnings: string[];
+  water: WaterBody[];
 }
 
 const MAX_LAYERS = 120;
 
-export function computeLayers(grid: ElevGrid, p: TopoParams): TopoResult {
+/** Indices des cellules de la grille dont le centre est dans le polygone (remplissage pair-impair) */
+function rasterize(poly: Polygon, grid: ElevGrid, cellX: number, cellY: number, H: number): number[] {
+  const rings = poly.map((r) => r.map(([x, y]) => [x / cellX + grid.pad, (H - y) / cellY + grid.pad] as Pt));
+  const out: number[] = [];
+  let y0 = Infinity, y1 = -Infinity;
+  for (const r of rings) for (const [, y] of r) { if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  for (let j = Math.max(0, Math.floor(y0)); j < Math.min(grid.rows, Math.ceil(y1)); j++) {
+    const yc = j + 0.5;
+    const xs: number[] = [];
+    for (const r of rings) for (let k = 0; k < r.length - 1; k++) {
+      const [ax, ay] = r[k], [bx, by] = r[k + 1];
+      if ((ay <= yc) !== (by <= yc)) xs.push(ax + ((yc - ay) / (by - ay)) * (bx - ax));
+    }
+    xs.sort((a, b) => a - b);
+    for (let k = 0; k + 1 < xs.length; k += 2) {
+      for (let i = Math.max(0, Math.ceil(xs[k] - 0.5)); i <= Math.min(grid.cols - 1, Math.floor(xs[k + 1] - 0.5)); i++) out.push(j * grid.cols + i);
+    }
+  }
+  return out;
+}
+
+export function computeLayers(grid: ElevGrid, p: TopoParams, water: MultiPolygon = []): TopoResult {
   const W = p.widthMm;
   const H = p.shape === 'circle' ? p.widthMm : p.heightMm;
   const cellX = W / grid.n, cellY = H / grid.m;
@@ -69,21 +104,30 @@ export function computeLayers(grid: ElevGrid, p: TopoParams): TopoResult {
   const gen = contours().size([grid.cols, grid.rows]).smooth(true);
 
   const scale = (p.realWidthM * 1000) / W;
-  const base = p.baseAlt ?? grid.min;
   const top = grid.max;
+  const nTot = Math.max(2, Math.round(p.layerCount));
+  const stepFor = (b: number) => (p.mode === 'count' ? (top - b) / nTot : (p.layerMm * scale) / p.exaggeration / 1000);
+
+  // --- eau : surface plane à son altitude réelle, éventuellement creusée de N couches ---
+  const bodies: WaterBody[] = [];
+  const step0 = stepFor(p.baseAlt ?? grid.min);
+  for (const poly of water) {
+    const cells = rasterize(poly, grid, cellX, cellY, H);
+    if (cells.length < 3) continue;
+    const alts = cells.map((i) => grid.data[i]).sort((a, b) => a - b);
+    const surface = alts[Math.floor(alts.length * 0.25)]; // le relief est bruité sur l'eau : 1er quartile
+    const bottom = surface - p.waterDepth * step0;
+    for (const i of cells) values[i] = bottom - 1e-3;
+    bodies.push({ poly, surface, bottom, layerIndex: 0 });
+  }
+
+  const base = p.baseAlt ?? Math.min(grid.min, ...bodies.map((b) => b.bottom));
   if (top <= base) {
-    return { W, H, frame, layers: [], scale, layerRealM: 0, exaggeration: 0, base, top, totalPieces: 0, cutLengthMm: 0,
+    return { W, H, frame, layers: [], water: [], scale, layerRealM: 0, exaggeration: 0, base, top, totalPieces: 0, cutLengthMm: 0,
       warnings: ['Aucun relief au-dessus de l’altitude de base : rien à découper.'] };
   }
-  let layerRealM: number, exaggeration: number;
-  if (p.mode === 'count') {
-    const nTot = Math.max(2, Math.round(p.layerCount));
-    layerRealM = (top - base) / nTot;
-    exaggeration = (p.layerMm * scale) / (layerRealM * 1000);
-  } else {
-    exaggeration = p.exaggeration;
-    layerRealM = (p.layerMm * scale) / exaggeration / 1000;
-  }
+  const layerRealM = stepFor(base);
+  const exaggeration = (p.layerMm * scale) / (layerRealM * 1000);
 
   const inFrame = (pt: Pt) => {
     const eps = 0.05;
@@ -112,7 +156,11 @@ export function computeLayers(grid: ElevGrid, p: TopoParams): TopoResult {
         return [...s, s[0]];
       }).filter((r) => r.length >= 4),
     ).filter((poly) => poly.length);
-    return intersect(mp, frame);
+    let region = intersect(mp, frame);
+    // rivage exact : on retire le contour vectoriel de l'eau située sous ce niveau
+    const wet = bodies.filter((b) => b.bottom < level).map((b) => [b.poly] as MultiPolygon);
+    if (wet.length && region.length) region = difference(region, union(...wet));
+    return region;
   };
 
   const cleanPieces = (mp: MultiPolygon): MultiPolygon =>
@@ -147,6 +195,14 @@ export function computeLayers(grid: ElevGrid, p: TopoParams): TopoResult {
     });
     if (!pieces.length) break;
     layers.push({ index: k + 1, level: levels[k], pieces, engrave: [], labels: [], thinPieces: thin });
+  }
+
+  // --- eau : couche sur laquelle repose chaque plan d'eau + gravure du rivage ---
+  for (const b of bodies) {
+    let li = 0;
+    for (const L of layers) if (L.level <= b.bottom) li = L.index;
+    b.layerIndex = li;
+    layers[li].engrave.push(...outlines(intersect([b.poly], layers[li].pieces), 3));
   }
 
   // --- gravures ---
@@ -195,5 +251,5 @@ export function computeLayers(grid: ElevGrid, p: TopoParams): TopoResult {
   if (mmPerCellReal > 1.5) {
     warnings.push(`Les données de relief (≈ ${Math.round(grid.sourceResM)} m/pixel) donnent ≈ ${mmPerCellReal.toFixed(1)} mm par pixel sur le tableau : détails lissés.`);
   }
-  return { W, H, frame, layers, scale, layerRealM, exaggeration, base, top, totalPieces, cutLengthMm, warnings };
+  return { W, H, frame, layers, water: bodies, scale, layerRealM, exaggeration, base, top, totalPieces, cutLengthMm, warnings };
 }

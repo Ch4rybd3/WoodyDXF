@@ -104,6 +104,11 @@ export function intersect(a: MultiPolygon, b: MultiPolygon | Polygon): MultiPoly
   return polygonClipping.intersection(a as any, b as any) as MultiPolygon;
 }
 
+export function difference(a: MultiPolygon, b: MultiPolygon): MultiPolygon {
+  if (!a.length || !b.length) return a;
+  return polygonClipping.difference(a as any, b as any) as MultiPolygon;
+}
+
 export function union(...parts: MultiPolygon[]): MultiPolygon {
   const nonEmpty = parts.filter((p) => p.length);
   if (!nonEmpty.length) return [];

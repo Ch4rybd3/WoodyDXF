@@ -8,8 +8,9 @@ const linesPath = (ls: Polyline[], H: number) =>
   ls.map((l) => 'M' + l.map(([x, y]) => `${x.toFixed(2)},${(H - y).toFixed(2)}`).join('L')).join('');
 
 /** Teinte bois de la couche i sur n (clair en bas → plus foncé en haut) */
-export function woodColor(i: number, n: number, water = false): string {
-  if (water && i === 0) return '#5f9ea0';
+export const WATER_COLOR = '#5b9fbf';
+
+export function woodColor(i: number, n: number): string {
   const t = n > 1 ? i / (n - 1) : 0;
   const l = 82 - t * 30;
   return `hsl(32, ${45 + t * 15}%, ${l}%)`;
@@ -19,8 +20,11 @@ export function woodColor(i: number, n: number, water = false): string {
 export function svgStack(r: TopoResult, water: boolean, margin = 2): string {
   const n = r.layers.length;
   const body = r.layers
-    .map((L, i) => `<path d="${mpPath(L.pieces, r.H)}" fill="${woodColor(i, n, water)}" fill-rule="evenodd" stroke="rgba(60,35,15,.55)" stroke-width="0.25"/>`)
-    .join('');
+    .map((L, i) => `<path d="${mpPath(L.pieces, r.H)}" fill="${woodColor(i, n)}" fill-rule="evenodd" stroke="rgba(60,35,15,.55)" stroke-width="0.25"/>`)
+    .join('') +
+    (water && r.water.length
+      ? `<path d="${mpPath(r.water.map((b) => b.poly), r.H)}" fill="${WATER_COLOR}" fill-rule="evenodd" stroke="#2f6f8f" stroke-width="0.3"/>`
+      : '');
   return `<svg viewBox="${-margin} ${-margin} ${r.W + 2 * margin} ${r.H + 2 * margin}" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">${body}</svg>`;
 }
 
@@ -33,6 +37,7 @@ export function svgLayer(r: TopoResult, index: number): string {
     <path d="${mpPath(r.layers[0].pieces, r.H)}" fill="none" stroke="var(--line-faint)" stroke-width="0.3" stroke-dasharray="2 2"/>
     ${below ? `<path d="${mpPath(below.pieces, r.H)}" fill="var(--ghost)" fill-rule="evenodd" stroke="none"/>` : ''}
     <path d="${mpPath(L.pieces, r.H)}" fill="var(--wood)" fill-rule="evenodd" stroke="#d62828" stroke-width="0.45"/>
+    ${(() => { const w = r.water.filter((b) => b.layerIndex === index).map((b) => b.poly); return w.length ? `<path d="${mpPath(w, r.H)}" fill="${WATER_COLOR}" fill-opacity=".45" fill-rule="evenodd" stroke="none"/>` : ''; })()}
     <path d="${linesPath(L.engrave, r.H)}" fill="none" stroke="#3b2a1a" stroke-width="0.25"/>
     <path d="${linesPath(L.labels, r.H)}" fill="none" stroke="#1d4ed8" stroke-width="0.35"/>
   </svg>`;
