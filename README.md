@@ -8,15 +8,15 @@ Application web pour concevoir des pièces en bois destinées à une **défonceu
 
 | Module | État | Rôle |
 |---|---|---|
-| **Topo** | ✅ v0.1 | Tableaux en relief : un lieu réel découpé en couches à empiler |
-| **Atelier** | 🚧 | Calepinage des pièces dans les panneaux et devis |
+| **Topo** | ✅ | Tableaux en relief : un lieu réel découpé en couches à empiler |
+| **Atelier** | ✅ v0.1 | Calepinage des pièces dans les panneaux et devis |
 | **Lames** | 🚧 | Mobilier et panneaux muraux en lames de bois |
 
 Le cadrage complet (fonctionnalités, feuille de route) est dans [CADRAGE.md](CADRAGE.md).
 
 ## Topo : mode d'emploi
 
-1. Cherche un lieu ou déplace la carte : le cadre orange suit le centre.
+1. Cherche un lieu, puis déplace ou redimensionne le cadre orange avec ses poignées.
 2. Choisis la forme (rectangle ou cercle), le format en mm et la largeur réelle couverte (ou l'échelle).
 3. Règle l'épaisseur des couches (épaisseur de ton contreplaqué) et l'exagération verticale, ou impose un nombre de couches.
 4. **Calculer les couches**, puis vérifie dans les onglets *Couches* et *3D*.
@@ -32,6 +32,16 @@ Le cadrage complet (fonctionnalités, feuille de route) est dans [CADRAGE.md](CA
 | `INFO` | Indications, non usinées |
 
 Chaque couche N porte, gravés, le contour de la couche N+1 (repère de collage) et son numéro, placé là où la couche suivante le cachera.
+
+## Atelier : mode d'emploi
+
+1. Envoie un tableau depuis Topo (« Calepiner et chiffrer dans l'Atelier ») et/ou ajoute des pièces rectangulaires dans l'onglet *Pièces à la main*.
+2. Renseigne tes panneaux (dimensions, épaisseur, prix, sens du fil) dans l'onglet *Bibliothèque* : les prix par défaut sont indicatifs.
+3. Règle la machine (table, Ø fraise, espacement, marge, avance, passes) et le devis (consommables, main d'œuvre, marge).
+4. Le calepinage se recalcule tout seul : panneaux nécessaires, taux d'utilisation, temps machine, prix de revient et prix conseillé.
+5. **Télécharger les DXF par panneau** : un DXF par panneau avec les pièces déjà placées, plus le devis.
+
+Le calepinage range les pièces par rectangles englobants (MaxRects, rotation 0°/90° sauf panneau avec fil) ; l'imbrication de formes viendra plus tard.
 
 ## Développement
 

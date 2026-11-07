@@ -5,6 +5,8 @@ import { fetchElevationGrid, type ElevGrid } from './elevation';
 import { buildZip } from './export';
 import { computeLayers, type TopoParams, type TopoResult } from './layers';
 import { fetchWater } from './water';
+import { topoToJob } from './tojob';
+import { setJob } from '../core/job';
 import { circlePolygon, rectPolygon, type MultiPolygon } from '../core/geometry';
 import { EARTH_CIRC, frameBounds, lonLatToWorld, makeFrame, worldToLonLat, type WorldFrame } from './mercator';
 import { svgLayer, svgStack } from './preview2d';
@@ -154,6 +156,7 @@ export function mountTopo(root: HTMLElement): () => void {
       <div class="actions">
         <button class="btn primary" id="go" type="button">Calculer les couches</button>
         <button class="btn" id="dl" type="button" disabled>Télécharger les DXF (.zip)</button>
+        <button class="btn" id="toAtelier" type="button" disabled>Calepiner et chiffrer dans l’Atelier →</button>
       </div>
       <div class="status" id="status"></div>
       <div class="summary" id="summary"></div>
@@ -563,6 +566,7 @@ export function mountTopo(root: HTMLElement): () => void {
       renderSummary();
       renderLayers();
       ($('#dl') as HTMLButtonElement).disabled = !result.layers.length;
+      ($('#toAtelier') as HTMLButtonElement).disabled = !result.layers.length;
       const cur = $('[data-tab].on')?.dataset.tab;
       if (cur === 'map') showTab('layers'); else if (cur === '3d') render3d();
     } catch (err) {
@@ -579,6 +583,12 @@ export function mountTopo(root: HTMLElement): () => void {
     const blob = await buildZip(result, s, s.placeName, s.lat, s.lon);
     downloadBlob(blob, `woodydxf-${slug(s.placeName)}-${s.widthMm}x${Math.round(H())}.zip`);
     status('ZIP téléchargé.', 'ok');
+  });
+
+  $('#toAtelier').addEventListener('click', () => {
+    if (!result) return;
+    setJob(topoToJob(result, s.layerMm, s.placeName || 'Tableau en relief'));
+    location.hash = '#/atelier';
   });
 
   syncDerived();

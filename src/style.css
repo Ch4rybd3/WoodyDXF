@@ -144,3 +144,39 @@ a { color: inherit; }
   border-radius: 50%; display: flex; align-items: center; justify-content: center;
   font-size: 14px; line-height: 1; color: #b45309;
 }
+
+/* Atelier */
+.jobname { margin: 0 0 4px; font-size: 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; padding: 3px 8px; border: 1px solid var(--line); border-radius: 99px; background: #fff; cursor: pointer; }
+.chip input { accent-color: var(--accent); margin: 0; }
+.chip em { font-style: normal; color: var(--muted); }
+.sheets { flex: 1; min-height: 0; overflow-y: auto; padding: 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 16px; align-content: start; }
+.sheet { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px; }
+.sheet svg { width: 100%; height: auto; display: block; }
+.sheet text { fill: #3b2a1a; font-family: system-ui, sans-serif; }
+.sheet figcaption { font-size: 13px; color: var(--muted); margin-top: 6px; }
+.doc { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px; max-width: 960px; }
+.doc h2 { margin: 0 0 6px; font-size: 20px; }
+.tablewrap { overflow-x: auto; margin: 12px 0; }
+table.grid { border-collapse: collapse; width: 100%; font-size: 13px; background: var(--panel); }
+table.grid th { text-align: left; font-weight: 600; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+table.grid td { padding: 3px 4px; border-bottom: 1px solid var(--line); }
+table.grid.ro td { padding: 7px 8px; }
+table.grid td input[type=text], table.grid td input[type=number] { font: inherit; width: 100%; min-width: 70px; padding: 5px 6px; border: 1px solid transparent; border-radius: 6px; background: transparent; }
+table.grid td input[type=text] { min-width: 160px; }
+table.grid td input:focus { border-color: var(--accent); outline: 0; background: #fff; }
+table.grid .c { text-align: center; }
+table.grid .r, table.grid th.r { text-align: right; font-variant-numeric: tabular-nums; }
+table.grid .muted, .muted { color: var(--muted); }
+table.totals { margin-top: 16px; max-width: 640px; }
+table.totals tr.sub td { font-weight: 600; border-top: 2px solid var(--line); }
+table.totals tr.total td { font-weight: 700; font-size: 16px; color: var(--accent); }
+@media (max-width: 820px) { .sheets { grid-template-columns: 1fr; } .doc { padding: 16px; } }
+@media print {
+  .top, .panel, .tabs, .noprint { display: none !important; }
+  .workspace { display: block; }
+  .view { display: none !important; }
+  .view[data-view="quote"] { display: block !important; }
+  .doc { overflow: visible; max-width: none; }
+}

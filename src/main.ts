@@ -17,8 +17,8 @@ const HOME = `
       <h2>Topo · Tableaux en relief</h2>
       <p>Choisis un lieu, un format et une épaisseur de couche : le relief réel est découpé en couches DXF à empiler.</p>
     </a>
-    <a class="card soon" href="#/atelier">
-      <span class="tag">Bientôt</span>
+    <a class="card" href="#/atelier">
+      <span class="tag ok">Disponible</span>
       <h2>Atelier · Calepinage et devis</h2>
       <p>Range les pièces dans tes panneaux, réduit les chutes et calcule le prix de revient.</p>
     </a>
@@ -43,7 +43,9 @@ async function route() {
     const { mountTopo } = await import('./topo/view');
     unmount = mountTopo(app);
   } else if (r === 'atelier') {
-    app.innerHTML = SOON('Atelier', 'Calepinage des pièces dans les panneaux et devis : en cours de développement.');
+    app.innerHTML = '<p class="loading">Chargement…</p>';
+    const { mountAtelier } = await import('./atelier/view');
+    unmount = mountAtelier(app);
   } else if (r === 'lames') {
     app.innerHTML = SOON('Lames', 'Mobilier et panneaux en lames de bois : en cours de développement.');
   } else {
