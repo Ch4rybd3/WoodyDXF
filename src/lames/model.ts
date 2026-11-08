@@ -106,7 +106,7 @@ export const PRESETS: Record<string, { label: string; p: Partial<LamesParams> }>
   },
   goutte: {
     label: 'Goutte d’eau',
-    p: { L: 1000, P: 1000, H: 90, thickness: 6, gap: 4, face: 'top', motif: 'goutte', amplitude: 65, kx: 4, kz: 1, phase: 0,
+    p: { L: 1000, P: 1000, H: 90, thickness: 6, gap: 6, face: 'top', motif: 'goutte', amplitude: 65, kx: 4, kz: 1, phase: 0,
       dropX: 50, dropY: 50, dropDamp: 2, cutouts: [], rodCount: 2, rodD: 6, minMaterial: 22 },
   },
   mural: {
