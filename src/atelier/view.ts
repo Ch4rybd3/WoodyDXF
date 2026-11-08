@@ -57,6 +57,14 @@ export function mountAtelier(root: HTMLElement): () => void {
         <h3>2 · Panneaux à utiliser</h3>
         <div id="choice"></div>
         <p class="hint">Bibliothèque modifiable dans l’onglet « Bibliothèque ». « Automatique » choisit le panneau le moins cher pour chaque épaisseur.</p>
+        <label class="field"><span>Calepinage</span></label>
+        <div class="seg" data-seg="nesting">
+          <button data-v="shape">Formes imbriquées</button><button data-v="rect">Rectangles (rapide)</button>
+        </div>
+        <div class="seg" data-seg="precision" id="precSeg">
+          <button data-v="normal">Précision normale</button><button data-v="fine">Fine (plus lent)</button>
+        </div>
+        <p class="hint">« Formes imbriquées » suit le vrai contour des pièces et loge les petites pièces dans les trous des grandes.</p>
       </section>
       <section>
         <h3>3 · Machine</h3>
@@ -239,7 +247,7 @@ export function mountAtelier(root: HTMLElement): () => void {
     el.innerHTML = plan.sheets.map((sh) => `
       <figure class="sheet">
         ${sheetSvg(sh, hue, s.machine.marginMm)}
-        <figcaption><strong>Panneau ${sh.n}</strong> · ${esc(sh.panel.name)} · ${sh.pieces.length} pièce(s) · utilisation ${fmt(sh.util * 100)} %</figcaption>
+        <figcaption><strong>Panneau ${sh.n}</strong> · ${esc(sh.panel.name)} · ${sh.pieces.length} pièce(s) · utilisation ${fmt(sh.util * 100)} % · ${fmt(Math.min(sh.extent, Math.max(sh.panel.w, sh.panel.h)))} mm de longueur utilisés sur ${fmt(Math.max(sh.panel.w, sh.panel.h))}</figcaption>
       </figure>`).join('');
   };
 
@@ -295,15 +303,37 @@ export function mountAtelier(root: HTMLElement): () => void {
   };
 
   let timer = 0;
+  let worker: Worker | null = null;
+  let busy = false;
+  let seq = 0;
   const compute = () => {
+    // un calcul en cours devient inutile : on l'arrête
+    if (worker && busy) { worker.terminate(); worker = null; }
+    if (!worker) {
+      worker = new Worker(new URL('./planWorker.ts', import.meta.url), { type: 'module' });
+      worker.onmessage = (e: MessageEvent) => {
+        if (e.data.id !== seq) return;
+        busy = false;
+        if (e.data.error) {
+          $('#status').textContent = 'Erreur : ' + e.data.error;
+          $('#status').className = 'status err';
+          return;
+        }
+        plan = e.data.plan as Plan;
+        renderChoice();
+        renderSheets();
+        renderQuote();
+        renderSummary();
+        $('#status').textContent = plan.pieceCount ? `Calepinage calculé en ${fmt((performance.now() - t0) / 1000, 1)} s.` : '';
+        $('#status').className = 'status';
+      };
+    }
     const t0 = performance.now();
-    plan = makePlan(job, s);
-    renderChoice();
-    renderSheets();
-    renderQuote();
-    renderSummary();
-    $('#status').textContent = plan.pieceCount ? `Calepinage calculé en ${fmt(performance.now() - t0)} ms.` : '';
+    busy = true;
+    seq++;
+    $('#status').textContent = 'Optimisation du calepinage…';
     $('#status').className = 'status';
+    worker.postMessage({ id: seq, job, state: s });
   };
   const changed = () => {
     saveAtelier(s);
@@ -330,5 +360,5 @@ export function mountAtelier(root: HTMLElement): () => void {
   renderManual();
   compute();
 
-  return () => clearTimeout(timer);
+  return () => { clearTimeout(timer); worker?.terminate(); };
 }

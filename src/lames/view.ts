@@ -56,10 +56,16 @@ export function mountLames(root: HTMLElement): () => void {
             <option value="galbe">Galbe (creux au milieu)</option>
             <option value="galbeVague">Galbe ondulé</option>
             <option value="bosse">Creux central</option>
+            <option value="goutte">Goutte d’eau (ondes concentriques)</option>
           </select>
         </label>
         <div class="row2">${num('Amplitude', 'amplitude', 'mm', '1', 'min="0"')}${num('Matière mini', 'minMaterial', 'mm', '1', 'min="5"')}</div>
-        <div class="row2">${num('Ondulations (longueur)', 'kx', '', '0.25', 'min="0"')}${num('Ondulations (face)', 'kz', '', '0.25', 'min="0"')}</div>
+        <div class="row2">${num('Ondulations (longueur)', 'kx', '', '0.25', 'min="0"')}<div data-hide-motif="goutte">${num('Ondulations (face)', 'kz', '', '0.25', 'min="0"')}</div></div>
+        <div data-show-motif="goutte">
+          <div class="row2">${num('Impact : position en longueur', 'dropX', '%', '1')}${num('Impact : position sur la face', 'dropY', '%', '1')}</div>
+          ${num('Atténuation des ondes', 'dropDamp', '', '0.25', 'min="0"')}
+          <p class="hint">50 % / 50 % = goutte au centre. « Ondulations (longueur) » = nombre d’ondes sur la plus grande dimension ; plus l’atténuation est forte, plus les ondes s’effacent loin du centre.</p>
+        </div>
         ${num('Décalage de la vague', 'phase', '°', '15')}
       </section>
       <section>
@@ -121,13 +127,15 @@ export function mountLames(root: HTMLElement): () => void {
     });
     $$('[data-seg]').forEach((seg) => seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === String(s[seg.dataset.seg as keyof LamesState]))));
     ($('#name') as HTMLInputElement).value = s.name;
+    $$('[data-show-motif]').forEach((el) => { el.style.display = el.dataset.showMotif === s.motif ? '' : 'none'; });
+    $$('[data-hide-motif]').forEach((el) => { el.style.display = el.dataset.hideMotif === s.motif ? 'none' : ''; });
     $$('[data-preset]').forEach((b) => b.classList.toggle('on', b.dataset.preset === s.preset));
   };
   $$<HTMLInputElement | HTMLSelectElement>('[data-k]').forEach((el) => {
     el.addEventListener(el instanceof HTMLSelectElement || (el as HTMLInputElement).type === 'checkbox' ? 'change' : 'input', () => {
       const k = el.dataset.k as keyof LamesState;
       if (el instanceof HTMLInputElement && el.type === 'checkbox') (s as any)[k] = el.checked;
-      else if (el instanceof HTMLSelectElement) (s as any)[k] = el.value;
+      else if (el instanceof HTMLSelectElement) { (s as any)[k] = el.value; if (k === 'motif') syncInputs(); }
       else { const v = parseFloat(el.value); if (!Number.isFinite(v)) return; (s as any)[k] = v; }
       changed();
     });

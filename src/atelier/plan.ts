@@ -2,6 +2,8 @@
 import { bbox, polygonArea, ringLength, type Polygon, type Polyline, type Pt } from '../core/geometry';
 import type { Job, JobPiece } from '../core/job';
 import { nest, type NestItem } from './nest';
+import { applyPlacement, nestShapes } from './nestShape';
+import polylabel from 'polylabel';
 import type { AtelierState, Panel } from './store';
 
 export interface PlacedPiece {
@@ -92,27 +94,40 @@ function nestOn(panel: Panel, pcs: Prepared[], s: AtelierState) {
   const m = s.machine;
   const sp = Math.max(m.spacingMm, m.toolMm);
   const W = panel.w - 2 * m.marginMm + sp, H = panel.h - 2 * m.marginMm + sp;
-  const items: NestItem[] = pcs.map((p, key) => ({ key, w: p.w + sp, h: p.h + sp, rot: !panel.grain }));
-  const res = nest(items, W, H);
-  const sheets = res.sheets.map((sh) => {
+  const long = panel.w >= panel.h;
+  const finish = (placed: { p: Prepared; tf: (pt: Pt) => Pt; rotated: boolean }[]) => {
     let pieceArea = 0, extent = 0;
-    const long = panel.w >= panel.h;
-    const pieces: PlacedPiece[] = sh.placements.map((pl) => {
-      const p = pcs[pl.key];
-      const ox = m.marginMm + pl.x, oy = m.marginMm + pl.y;
-      // rotation de 90° (sens trigo) puis translation
-      const tf = (pt: Pt): Pt => (pl.rotated ? [ox + p.h - pt[1], oy + pt[0]] : [ox + pt[0], oy + pt[1]]);
-      const w = pl.rotated ? p.h : p.w, h = pl.rotated ? p.w : p.h;
+    const pieces: PlacedPiece[] = placed.map(({ p, tf, rotated }) => {
+      const shape = p.shape.map((r) => r.map(tf));
+      const [x0, y0, x1, y1] = bbox([shape]);
       pieceArea += p.area;
-      extent = Math.max(extent, long ? ox + w : oy + h);
-      return {
-        id: p.id, group: p.group, rotated: pl.rotated,
-        shape: p.shape.map((r) => r.map(tf)), engrave: p.engrave.map((l) => l.map(tf)),
-        center: [ox + w / 2, oy + h / 2],
-      };
+      extent = Math.max(extent, long ? x1 : y1);
+      // étiquette au « pôle d'inaccessibilité » : toujours dans la matière, même pour un cadre
+      const lab = polylabel(shape, 1) as unknown as number[];
+      const center: Pt = Number.isFinite(lab[0]) ? [lab[0], lab[1]] : [(x0 + x1) / 2, (y0 + y1) / 2];
+      return { id: p.id, group: p.group, rotated, shape, engrave: p.engrave.map((l) => l.map(tf)), center };
     });
     return { pieces, pieceArea, extent: extent + m.marginMm };
-  });
+  };
+
+  if (s.nesting === 'shape') {
+    const res = nestShapes(pcs.map((p, key) => ({ key, shape: p.shape })), panel.w, panel.h,
+      { margin: m.marginMm, spacing: sp, allowRot: !panel.grain, precision: s.precision });
+    return {
+      sheets: res.sheets.map((pls) => finish(pls.map((pl) => ({ p: pcs[pl.key], tf: (pt: Pt) => applyPlacement(pt, pl), rotated: pl.rot !== 0 })))),
+      tooBig: res.tooBig.map((k) => pcs[k].id),
+    };
+  }
+
+  const items: NestItem[] = pcs.map((p, key) => ({ key, w: p.w + sp, h: p.h + sp, rot: !panel.grain }));
+  const res = nest(items, W, H);
+  const sheets = res.sheets.map((sh) => finish(sh.placements.map((pl) => {
+    const p = pcs[pl.key];
+    const ox = m.marginMm + pl.x, oy = m.marginMm + pl.y;
+    // rotation de 90° (sens trigo) puis translation
+    const tf = (pt: Pt): Pt => (pl.rotated ? [ox + p.h - pt[1], oy + pt[0]] : [ox + pt[0], oy + pt[1]]);
+    return { p, tf, rotated: pl.rotated };
+  })));
   return { sheets, tooBig: res.tooBig.map((k) => pcs[k].id) };
 }
 

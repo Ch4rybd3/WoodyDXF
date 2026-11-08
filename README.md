@@ -35,9 +35,9 @@ Chaque couche N porte, gravés, le contour de la couche N+1 (repère de collage)
 
 ## Lames : mode d'emploi
 
-1. Choisis un modèle de départ : comptoir, banc, bureau ou panneau mural.
+1. Choisis un modèle de départ : comptoir, banc, bureau, goutte d'eau ou panneau mural.
 2. Règle les dimensions, l'épaisseur des lames (celle de ton panneau) et l'espacement (0 = lames jointives).
-3. Déforme la face avant ou le dessus avec un motif (vague, diagonale, damier, galbe…), son amplitude et le nombre d'ondulations.
+3. Déforme la face avant ou le dessus avec un motif (vague, diagonale, damier, galbe, goutte d'eau…), son amplitude et le nombre d'ondulations. La goutte d'eau dessine des ondes concentriques autour d'un point d'impact réglable, avec une atténuation.
 4. Ajoute des découpes (rectangles ou trous ronds) : niche, passage de jambes, poignée, passe-câble. Elles traversent toutes les lames concernées.
 5. Place les tiges filetées (automatiquement ou à la main) ; les entretoises sont générées si les lames sont espacées.
 6. Télécharge un DXF par lame (numéro gravé) ou envoie le tout à l'Atelier pour le calepinage et le devis.
@@ -52,7 +52,7 @@ Repère d'une lame : u = profondeur depuis le dos, v = hauteur depuis le sol, x 
 4. Le calepinage se recalcule tout seul : panneaux nécessaires, taux d'utilisation, temps machine, prix de revient et prix conseillé.
 5. **Télécharger les DXF par panneau** : un DXF par panneau avec les pièces déjà placées, plus le devis.
 
-Le calepinage range les pièces par rectangles englobants (MaxRects, rotation 0°/90° sauf panneau avec fil) ; l'imbrication de formes viendra plus tard.
+Deux modes de calepinage : **formes imbriquées** (par défaut : suit le vrai contour des pièces, rotation par 90°, petites pièces logées dans les trous des grandes, calcul en arrière-plan) ou **rectangles** (MaxRects, plus rapide). Les pièces restent tournées de 0° ou 180° seulement sur un panneau avec fil.
 
 ## Développement
 

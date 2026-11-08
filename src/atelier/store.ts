@@ -57,6 +57,9 @@ export interface AtelierState {
   /** panneau choisi pour chaque épaisseur (clé = épaisseur), vide = automatique */
   choice: Record<string, string>;
   offGroups: string[];
+  /** calepinage : formes imbriquées (pièces dans les trous) ou rectangles englobants */
+  nesting: 'shape' | 'rect';
+  precision: 'normal' | 'fine';
 }
 
 // Prix indicatifs (négoce bois France), à remplacer par les tiens
@@ -84,7 +87,7 @@ const KEY = 'woody.atelier.v1';
 export function loadAtelier(): AtelierState {
   const d: AtelierState = {
     panels: DEFAULT_PANELS.map((p) => ({ ...p })), machine: { ...DEFAULT_MACHINE }, quote: { ...DEFAULT_QUOTE },
-    manual: [], choice: {}, offGroups: [],
+    manual: [], choice: {}, offGroups: [], nesting: 'shape', precision: 'normal',
   };
   try {
     const raw = localStorage.getItem(KEY);

@@ -81,7 +81,9 @@ export class LamesPreview3D {
     if (key !== this.lastKey) {
       this.lastKey = key;
       const size = Math.max(p.L, p.P, p.H);
-      this.camera.position.set(size * 1.0, p.H * 0.5 + size * 0.75, p.P / 2 + size * 1.5);
+      // objet plat (panneau mural) : vue plus plongeante pour lire le relief
+      const flat = p.H < 0.25 * Math.max(p.L, p.P);
+      this.camera.position.set(size * (flat ? 0.5 : 1.0), p.H * 0.5 + size * (flat ? 1.4 : 0.75), p.P / 2 + size * (flat ? 0.9 : 1.5));
       this.controls.target.set(0, p.H / 2, 0);
       this.controls.update();
     }

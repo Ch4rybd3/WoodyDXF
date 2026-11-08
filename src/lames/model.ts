@@ -9,7 +9,7 @@ import {
 import { strokeText, textUnits } from '../core/font';
 import polygonClipping from 'polygon-clipping';
 
-export type Motif = 'aucun' | 'vague' | 'diagonale' | 'damier' | 'galbe' | 'galbeVague' | 'bosse';
+export type Motif = 'aucun' | 'vague' | 'diagonale' | 'damier' | 'galbe' | 'galbeVague' | 'bosse' | 'goutte';
 
 export interface Cutout {
   type: 'rect' | 'circle';
@@ -43,6 +43,10 @@ export interface LamesParams {
   /** ondulations sur la face (hauteur ou profondeur) */
   kz: number;
   phase: number;
+  /** goutte d'eau : position du point d'impact en % de la longueur et de la face, atténuation des ondes */
+  dropX: number;
+  dropY: number;
+  dropDamp: number;
   /** matière minimale conservée derrière la face déformée */
   minMaterial: number;
   cutouts: Cutout[];
@@ -100,6 +104,11 @@ export const PRESETS: Record<string, { label: string; p: Partial<LamesParams> }>
     p: { L: 1400, P: 700, H: 750, thickness: 18, gap: 0, face: 'front', motif: 'diagonale', amplitude: 80, kx: 1, kz: 0.5, phase: 0,
       cutouts: [{ type: 'rect', x0: 280, x1: 1120, u0: -1, u1: 701, v0: -1, v1: 680, r: 0 }, { type: 'rect', x0: 0, x1: 1400, u0: 60, u1: 560, v0: 80, v1: 620, r: 0 }], rodCount: 3, rodD: 8, minMaterial: 40 },
   },
+  goutte: {
+    label: 'Goutte d’eau',
+    p: { L: 1000, P: 1000, H: 90, thickness: 6, gap: 4, face: 'top', motif: 'goutte', amplitude: 65, kx: 4, kz: 1, phase: 0,
+      dropX: 50, dropY: 50, dropDamp: 2, cutouts: [], rodCount: 2, rodD: 6, minMaterial: 22 },
+  },
   mural: {
     label: 'Panneau mural',
     p: { L: 900, P: 600, H: 70, thickness: 6, gap: 6, face: 'top', motif: 'diagonale', amplitude: 45, kx: 1.5, kz: 1, phase: 0, cutouts: [], rodCount: 2, rodD: 6, minMaterial: 25 },
@@ -108,15 +117,19 @@ export const PRESETS: Record<string, { label: string; p: Partial<LamesParams> }>
 
 export const DEFAULT_LAMES: LamesParams = {
   preset: 'comptoir', L: 1800, P: 550, H: 1050, thickness: 18, gap: 0, face: 'front', motif: 'vague',
-  amplitude: 120, kx: 1.5, kz: 1, phase: 0, minMaterial: 40, cutouts: [], rodD: 8, rods: [], rodCount: 3,
+  amplitude: 120, kx: 1.5, kz: 1, phase: 0, dropX: 50, dropY: 50, dropDamp: 3, minMaterial: 40, cutouts: [], rodD: 8, rods: [], rodCount: 3,
   numbers: true, dogbones: false, toolMm: 6, spacerD: 30, density: 650,
 };
 
-/** Retrait de la face (0 = pas de retrait, 1 = amplitude maximale) en fonction de la position s ∈ [0,1] le long de la longueur et t ∈ [0,1] sur la face */
-export function retreat(m: Motif, s: number, t: number, kx: number, kz: number, phaseDeg: number): number {
-  const ph = phaseDeg / 360;
+/**
+ * Retrait de la face (0 = pas de retrait, 1 = amplitude maximale) à la position s ∈ [0,1] le long de la longueur
+ * et t ∈ [0,1] sur la face (hauteur pour la face avant, profondeur pour le dessus)
+ */
+export function retreat(p: LamesParams, s: number, t: number): number {
+  const { kx, kz } = p;
+  const ph = p.phase / 360;
   const along = 0.5 - 0.5 * Math.cos(2 * Math.PI * (kx * s + ph));
-  switch (m) {
+  switch (p.motif) {
     case 'aucun': return 0;
     case 'vague': return along;
     case 'diagonale': return 0.5 - 0.5 * Math.cos(2 * Math.PI * (kx * s + kz * t + ph));
@@ -127,19 +140,26 @@ export function retreat(m: Motif, s: number, t: number, kx: number, kz: number, 
       const sg = 0.35 / Math.max(0.2, kx);
       return 1 - Math.exp(-(((s - 0.5) ** 2) + ((t - 0.5) ** 2)) / (2 * sg * sg));
     }
+    case 'goutte': {
+      // ondes concentriques autour du point d'impact, en vraies distances : les cercles restent ronds
+      const F = p.face === 'front' ? p.H : p.P;
+      const D = Math.max(p.L, F);
+      const r = Math.hypot((s - p.dropX / 100) * p.L, (t - p.dropY / 100) * F) / D;
+      return 0.5 + 0.5 * Math.cos(2 * Math.PI * (kx * r - ph)) * Math.exp(-Math.max(0, p.dropDamp) * r);
+    }
   }
 }
 
 /** Profil extérieur d'une lame à la position s ∈ [0,1] */
 export function profile(p: LamesParams, s: number): Ring {
-  const N = 90;
+  const N = p.motif === 'goutte' ? Math.max(120, Math.ceil(p.kx * 40)) : 90;
   const pts: Ring = [];
   const A = Math.max(0, p.amplitude);
   if (p.face === 'front') {
     pts.push([0, 0]);
     for (let i = 0; i <= N; i++) {
       const v = (i / N) * p.H;
-      const u = Math.max(p.minMaterial, p.P - A * retreat(p.motif, s, i / N, p.kx, p.kz, p.phase));
+      const u = Math.max(p.minMaterial, p.P - A * retreat(p, s, i / N));
       pts.push([u, v]);
     }
     pts.push([0, p.H]);
@@ -147,7 +167,7 @@ export function profile(p: LamesParams, s: number): Ring {
     pts.push([0, 0], [p.P, 0]);
     for (let i = N; i >= 0; i--) {
       const u = (i / N) * p.P;
-      const v = Math.max(p.minMaterial, p.H - A * retreat(p.motif, s, i / N, p.kx, p.kz, p.phase));
+      const v = Math.max(p.minMaterial, p.H - A * retreat(p, s, i / N));
       pts.push([u, v]);
     }
   }
