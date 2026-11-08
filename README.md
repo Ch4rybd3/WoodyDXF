@@ -10,7 +10,7 @@ Application web pour concevoir des pièces en bois destinées à une **défonceu
 |---|---|---|
 | **Topo** | ✅ | Tableaux en relief : un lieu réel découpé en couches à empiler |
 | **Atelier** | ✅ v0.1 | Calepinage des pièces dans les panneaux et devis |
-| **Lames** | 🚧 | Mobilier et panneaux muraux en lames de bois |
+| **Lames** | ✅ v0.1 | Mobilier et panneaux muraux en lames de bois |
 
 Le cadrage complet (fonctionnalités, feuille de route) est dans [CADRAGE.md](CADRAGE.md).
 
@@ -33,9 +33,20 @@ Le cadrage complet (fonctionnalités, feuille de route) est dans [CADRAGE.md](CA
 
 Chaque couche N porte, gravés, le contour de la couche N+1 (repère de collage) et son numéro, placé là où la couche suivante le cachera.
 
+## Lames : mode d'emploi
+
+1. Choisis un modèle de départ : comptoir, banc, bureau ou panneau mural.
+2. Règle les dimensions, l'épaisseur des lames (celle de ton panneau) et l'espacement (0 = lames jointives).
+3. Déforme la face avant ou le dessus avec un motif (vague, diagonale, damier, galbe…), son amplitude et le nombre d'ondulations.
+4. Ajoute des découpes (rectangles ou trous ronds) : niche, passage de jambes, poignée, passe-câble. Elles traversent toutes les lames concernées.
+5. Place les tiges filetées (automatiquement ou à la main) ; les entretoises sont générées si les lames sont espacées.
+6. Télécharge un DXF par lame (numéro gravé) ou envoie le tout à l'Atelier pour le calepinage et le devis.
+
+Repère d'une lame : u = profondeur depuis le dos, v = hauteur depuis le sol, x = position le long de la longueur.
+
 ## Atelier : mode d'emploi
 
-1. Envoie un tableau depuis Topo (« Calepiner et chiffrer dans l'Atelier ») et/ou ajoute des pièces rectangulaires dans l'onglet *Pièces à la main*.
+1. Envoie un projet depuis Topo ou Lames (« Calepiner et chiffrer dans l'Atelier ») et/ou ajoute des pièces rectangulaires dans l'onglet *Pièces à la main*.
 2. Renseigne tes panneaux (dimensions, épaisseur, prix, sens du fil) dans l'onglet *Bibliothèque* : les prix par défaut sont indicatifs.
 3. Règle la machine (table, Ø fraise, espacement, marge, avance, passes) et le devis (consommables, main d'œuvre, marge).
 4. Le calepinage se recalcule tout seul : panneaux nécessaires, taux d'utilisation, temps machine, prix de revient et prix conseillé.

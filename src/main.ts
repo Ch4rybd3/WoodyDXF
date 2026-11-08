@@ -22,16 +22,13 @@ const HOME = `
       <h2>Atelier · Calepinage et devis</h2>
       <p>Range les pièces dans tes panneaux, réduit les chutes et calcule le prix de revient.</p>
     </a>
-    <a class="card soon" href="#/lames">
-      <span class="tag">Bientôt</span>
+    <a class="card" href="#/lames">
+      <span class="tag ok">Disponible</span>
       <h2>Lames · Mobilier paramétrique</h2>
       <p>Transforme une forme en lames de bois assemblées : comptoirs, bancs, bureaux, panneaux muraux.</p>
     </a>
   </div>
 </div>`;
-
-const SOON = (title: string, text: string) => `
-<div class="home"><section class="hero"><h1>${title}</h1><p>${text}</p><p><a class="btn" href="#/">← Retour</a></p></section></div>`;
 
 async function route() {
   if (typeof unmount === 'function') unmount();
@@ -47,7 +44,9 @@ async function route() {
     const { mountAtelier } = await import('./atelier/view');
     unmount = mountAtelier(app);
   } else if (r === 'lames') {
-    app.innerHTML = SOON('Lames', 'Mobilier et panneaux en lames de bois : en cours de développement.');
+    app.innerHTML = '<p class="loading">Chargement…</p>';
+    const { mountLames } = await import('./lames/view');
+    unmount = mountLames(app);
   } else {
     app.innerHTML = HOME;
   }
