@@ -38,6 +38,21 @@ export interface QuoteSettings {
   laborH: number;
   laborRate: number;
   marginPct: number;
+  /** chutes du stock : comptées à leur valeur ou gratuites */
+  offcuts: 'value' | 'free';
+}
+
+/** Chute rectangulaire en stock, réutilisable avant d'entamer un panneau neuf */
+export interface Offcut {
+  id: string;
+  name: string;
+  w: number;
+  h: number;
+  thickness: number;
+  /** panneau d'origine dans la bibliothèque ('' = matière quelconque de cette épaisseur) */
+  panelId: string;
+  /** valeur de la chute, € */
+  value: number;
 }
 
 export interface ManualPiece {
@@ -60,6 +75,11 @@ export interface AtelierState {
   /** calepinage : formes imbriquées (pièces dans les trous) ou rectangles englobants */
   nesting: 'shape' | 'rect';
   precision: 'normal' | 'fine';
+  offcuts: Offcut[];
+  /** placer d'abord les pièces dans les chutes du stock */
+  useOffcuts: boolean;
+  /** plus petit côté d'une chute qu'on garde, mm */
+  minOffcut: number;
 }
 
 // Prix indicatifs (négoce bois France), à remplacer par les tiens
@@ -80,7 +100,7 @@ export const DEFAULT_MACHINE: Machine = {
   feedMmMin: 1500, engraveFeedMmMin: 2000, passDepthMm: 3, contourSec: 4, sheetSetupMin: 5, hourlyRate: 30,
 };
 
-export const DEFAULT_QUOTE: QuoteSettings = { material: 'sheets', consumables: 10, laborH: 2, laborRate: 25, marginPct: 30 };
+export const DEFAULT_QUOTE: QuoteSettings = { material: 'sheets', consumables: 10, laborH: 2, laborRate: 25, marginPct: 30, offcuts: 'value' };
 
 const KEY = 'woody.atelier.v1';
 
@@ -88,6 +108,7 @@ export function loadAtelier(): AtelierState {
   const d: AtelierState = {
     panels: DEFAULT_PANELS.map((p) => ({ ...p })), machine: { ...DEFAULT_MACHINE }, quote: { ...DEFAULT_QUOTE },
     manual: [], choice: {}, offGroups: [], nesting: 'shape', precision: 'normal',
+    offcuts: [], useOffcuts: true, minOffcut: 150,
   };
   try {
     const raw = localStorage.getItem(KEY);

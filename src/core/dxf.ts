@@ -10,6 +10,7 @@ export const DXF_LAYERS = {
   ENGRAVE: { color: 7, label: 'Gravure' }, // noir/blanc
   DRILL: { color: 6, label: 'Perçage' }, // magenta
   INFO: { color: 8, label: 'Information (non usiné)' }, // gris
+  CUT_OFFCUT: { color: 4, label: 'Recoupe de la chute à garder' }, // cyan
 } as const;
 
 export type DxfLayer = keyof typeof DXF_LAYERS;

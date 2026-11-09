@@ -6,7 +6,7 @@ import type { Polygon, Pt } from '../core/geometry';
 
 export interface ShapeItem { key: number; shape: Polygon }
 export interface ShapePlacement { key: number; rot: number; tx: number; ty: number }
-export interface ShapeNestOptions { margin: number; spacing: number; allowRot: boolean; precision: 'normal' | 'fine' }
+export interface ShapeNestOptions { margin: number; spacing: number; allowRot: boolean; precision: 'normal' | 'fine'; /** nombre maximal de panneaux (chute du stock : 1) */ maxSheets?: number }
 
 interface Mask {
   rot: number;
@@ -210,6 +210,7 @@ export function nestShapes(items: ShapeItem[], panelW: number, panelH: number, o
         if (b) { sh.place(b.mk, b.X, b.Y); sh.placements.push(toPlacement(it.key, b.mk, b.X, b.Y)); done = true; break; }
       }
       if (done) continue;
+      if (sheets.length >= (o.maxSheets ?? Infinity)) { tooBig.push(it.key); continue; }
       const sh = new Sheet(Gw, Gh);
       const b = tryOn(sh, it);
       if (!b) { tooBig.push(it.key); continue; }
@@ -231,7 +232,9 @@ export function nestShapes(items: ShapeItem[], panelW: number, panelH: number, o
   for (const ord of orders.slice(0, o.precision === 'fine' ? 3 : 2)) {
     const r = run(prepared.slice().sort(ord));
     const last = r.sheets[r.sheets.length - 1];
-    const score = r.tooBig.length * 1e12 + r.sheets.length * 1e6 + (last ? last.extent : 0);
+    // panneau unique (chute) : on maximise la surface placée ; sinon le moins de panneaux possible
+    const left = o.maxSheets ? r.tooBig.reduce((a, k) => a + prepared.find((p) => p.key === k)!.cells, 0) : r.tooBig.length;
+    const score = left * 1e12 + r.sheets.length * 1e6 + (last ? last.extent : 0);
     if (score < bestScore) { bestScore = score; best = r; }
   }
   const { sheets, tooBig } = best!;

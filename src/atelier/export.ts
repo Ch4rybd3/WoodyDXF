@@ -30,10 +30,13 @@ export function sheetDxf(sh: PlanSheet): string {
     for (const l of p.engrave) d.addPolyline('ENGRAVE', l);
     for (const l of pieceLabel(p)) d.addPolyline('INFO', l);
   }
+  // recoupe de la chute à garder : une ligne droite de bord à bord
+  const lo = sh.leftover;
+  if (lo) d.addPolyline('CUT_OFFCUT', lo.x > 0 ? [[lo.x, 0], [lo.x, sh.panel.h]] : [[0, lo.y], [sh.panel.w, lo.y]]);
   return d.toString();
 }
 
-export const sheetFile = (sh: PlanSheet) => `panneau-${pad(sh.n)}-${String(sh.thickness).replace('.', ',')}mm.dxf`;
+export const sheetFile = (sh: PlanSheet) => `panneau-${pad(sh.n)}${sh.stock ? '-chute' : ''}-${String(sh.thickness).replace('.', ',')}mm.dxf`;
 
 export function quoteLines(plan: Plan, s: AtelierState, projectName: string): string[] {
   const c = plan.cost, q = s.quote, m = s.machine;
@@ -43,21 +46,30 @@ export function quoteLines(plan: Plan, s: AtelierState, projectName: string): st
     '',
     `Projet          : ${projectName || '—'}`,
     `Pièces          : ${plan.pieceCount}`,
-    `Panneaux        : ${plan.sheets.length}`,
+    `Panneaux        : ${plan.sheets.filter((sh) => !sh.stock).length} neuf(s)${plan.sheets.some((sh) => sh.stock) ? ` + ${plan.sheets.filter((sh) => sh.stock).length} chute(s) du stock` : ''}`,
     '',
     'Panneaux utilisés',
   ];
   for (const g of plan.groups) {
-    if (!g.panel || !g.sheets.length) continue;
-    const u = g.sheets.reduce((a, sh) => a + sh.pieceArea, 0) / (g.sheets.length * g.panel.w * g.panel.h);
-    L.push(`  ${g.sheets.length} × ${g.panel.name} (${g.panel.w} × ${g.panel.h} mm, ${eur(g.panel.price)}) · ${g.pieceCount} pièces · utilisation ${fmt(u * 100)} %`);
+    if (!g.panel) continue;
+    const news = g.sheets.filter((sh) => !sh.stock);
+    if (news.length) {
+      const u = news.reduce((a, sh) => a + sh.pieceArea, 0) / (news.length * g.panel.w * g.panel.h);
+      L.push(`  ${news.length} × ${g.panel.name} (${g.panel.w} × ${g.panel.h} mm, ${eur(g.panel.price)}) · utilisation ${fmt(u * 100)} %`);
+    }
+    for (const sh of g.sheets.filter((x) => x.stock)) L.push(`  Chute du stock : ${sh.panel.name} (${sh.panel.w} × ${sh.panel.h} mm, ${eur(sh.cost)}) · ${sh.pieces.length} pièces`);
+  }
+  const kept = plan.sheets.filter((sh) => sh.leftover);
+  if (kept.length) {
+    L.push('', 'Chutes à garder après découpe');
+    for (const sh of kept) L.push(`  Panneau ${sh.n} : ${fmt(sh.leftover!.w)} × ${fmt(sh.leftover!.h)} mm (valeur ${eur(sh.leftover!.value)})`);
   }
   L.push(
     '',
     `Longueur de coupe : ${fmt(plan.cutLengthMm / 1000, 1)} m · gravure ${fmt(plan.engraveLengthMm / 1000, 1)} m`,
     `Temps machine     : ${duration(plan.timeMin)} (avance ${m.feedMmMin} mm/min, passes de ${m.passDepthMm} mm)`,
     '',
-    `Matière         : ${eur(c.material)}${q.material === 'prorata' ? ' (dernier panneau au prorata)' : ' (panneaux entiers)'}`,
+    `Matière         : ${eur(c.material)}${q.material === 'prorata' ? ' (dernier panneau au prorata)' : ' (panneaux entiers)'}${plan.sheets.some((sh) => sh.stock) ? (q.offcuts === 'free' ? ', chutes offertes' : ', chutes à leur valeur') : ''}`,
     `Machine         : ${eur(c.machine)} (${m.hourlyRate} €/h)`,
     `Consommables    : ${eur(c.consumables)}`,
     `Main d’œuvre    : ${eur(c.labor)} (${q.laborH} h × ${q.laborRate} €/h)`,
@@ -83,6 +95,7 @@ export async function buildAtelierZip(plan: Plan, s: AtelierState, projectName: 
     '  CUT_INSIDE   découpe intérieure (trous)',
     '  ENGRAVE      gravure : courbes fines, repères de pose, numéros',
     '  INFO         contour du panneau et numéro des pièces (non usinés)',
+    '  CUT_OFFCUT   recoupe de la chute à garder (à faire en dernier, ou à la scie)',
     '',
     `Espacement entre pièces : ${Math.max(s.machine.spacingMm, s.machine.toolMm)} mm, marge au bord : ${s.machine.marginMm} mm.`,
     'Pense à ajouter des ponts de maintien (tabs) dans ta FAO pour que les pièces ne bougent pas.',

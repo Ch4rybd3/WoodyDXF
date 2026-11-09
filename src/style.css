@@ -193,3 +193,10 @@ table.totals tr.total td { font-weight: 700; font-size: 16px; color: var(--accen
 .rodn { font-weight: 600; padding-bottom: 6px; }
 .rodinfo { color: var(--muted); font-size: 11px; padding-bottom: 6px; }
 .panel { overflow-x: hidden; }
+
+/* Atelier : stock de chutes */
+.stockbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin: 0 0 12px; padding: 10px 14px; border-radius: 10px; background: rgba(42, 157, 143, .08); border: 1px solid rgba(42, 157, 143, .3); font-size: 13px; }
+.stockbar:empty { display: none; }
+.stockbar p { margin: 0; }
+.tabs button em { font-style: normal; font-size: 11px; margin-left: 4px; padding: 0 6px; border-radius: 99px; background: rgba(42, 157, 143, .18); }
+.tabs button em:empty { display: none; }

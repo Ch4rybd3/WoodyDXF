@@ -2,7 +2,7 @@ import { downloadBlob, slug } from '../core/download';
 import { getJob, setJob, type Job } from '../core/job';
 import { buildAtelierZip, duration, eur, fmt, quoteLines } from './export';
 import { makePlan, type Plan, type PlanSheet } from './plan';
-import { DEFAULT_PANELS, loadAtelier, saveAtelier, uid, type AtelierState } from './store';
+import { DEFAULT_PANELS, loadAtelier, saveAtelier, uid, type AtelierState, type Offcut } from './store';
 
 const esc = (t: string) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
@@ -24,9 +24,19 @@ function sheetSvg(sh: PlanSheet, hueOf: (g: string) => number, marginMm: number)
       `<text x="${p.center[0].toFixed(1)}" y="${y(p.center[1])}" font-size="${font}" text-anchor="middle" dominant-baseline="central">${p.id}</text>`;
   }).join('');
   return `<svg viewBox="${-font} ${-font} ${W + 2 * font} ${H + 2 * font}" xmlns="http://www.w3.org/2000/svg">
+    <defs><pattern id="hatch" width="${font}" height="${font}" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="${font}" height="${font}" fill="rgba(42,157,143,.08)"/><line x1="0" y1="0" x2="0" y2="${font}" stroke="rgba(42,157,143,.35)" stroke-width="${font / 6}"/></pattern></defs>
     <rect x="0" y="0" width="${W}" height="${H}" fill="#f3e6d1" stroke="#8a7560" stroke-width="${font / 6}"/>
     <rect x="${marginMm}" y="${marginMm}" width="${W - 2 * marginMm}" height="${H - 2 * marginMm}" fill="none" stroke="#b8a68e" stroke-width="${font / 10}" stroke-dasharray="${font / 2} ${font / 2}"/>
-    ${body}</svg>`;
+    ${body}${leftoverSvg(sh, y, font)}</svg>`;
+}
+
+function leftoverSvg(sh: PlanSheet, y: (v: number) => string, font: number): string {
+  const lo = sh.leftover;
+  if (!lo) return '';
+  const cx = lo.x + lo.w / 2, cy = lo.y + lo.h / 2;
+  const fs = Math.min(font * 1.4, lo.h / 4, lo.w / 8);
+  return `<rect x="${lo.x.toFixed(1)}" y="${y(lo.y + lo.h)}" width="${lo.w.toFixed(1)}" height="${lo.h.toFixed(1)}" fill="url(#hatch)" stroke="#2a9d8f" stroke-width="${font / 8}" stroke-dasharray="${font} ${font / 2}"/>
+    <text x="${cx.toFixed(1)}" y="${y(cy)}" font-size="${fs.toFixed(1)}" text-anchor="middle" dominant-baseline="central" fill="#1f6f66">chute à garder ${fmt(lo.w)} × ${fmt(lo.h)}</text>`;
 }
 
 export function mountAtelier(root: HTMLElement): () => void {
@@ -65,6 +75,8 @@ export function mountAtelier(root: HTMLElement): () => void {
           <button data-v="normal">Précision normale</button><button data-v="fine">Fine (plus lent)</button>
         </div>
         <p class="hint">« Formes imbriquées » suit le vrai contour des pièces et loge les petites pièces dans les trous des grandes.</p>
+        <label class="check"><input type="checkbox" id="useOffcuts"/> Utiliser d’abord les chutes du stock</label>
+        ${num('Chute gardée si ses deux côtés font au moins', 'minOffcut', 'mm', '10')}
       </section>
       <section>
         <h3>3 · Machine</h3>
@@ -82,7 +94,10 @@ export function mountAtelier(root: HTMLElement): () => void {
         </div>
         <div class="row2">${num('Consommables', 'quote.consumables', '€', '1')}${num('Marge', 'quote.marginPct', '%', '1')}</div>
         <div class="row2">${num('Main d’œuvre', 'quote.laborH', 'h', '0.25')}${num('Taux horaire', 'quote.laborRate', '€/h', '1')}</div>
-        <p class="hint">« Chute déduite » : le dernier panneau n’est compté qu’à la longueur utilisée, le reste repart en stock.</p>
+        <div class="seg" data-seg="quote.offcuts">
+          <button data-v="value">Chutes à leur valeur</button><button data-v="free">Chutes offertes</button>
+        </div>
+        <p class="hint">« Chute déduite » : le dernier panneau n’est compté qu’à la longueur utilisée, le reste repart en stock. Les chutes du stock sont facturées à leur valeur (prorata du prix du panneau d’origine) ou offertes.</p>
       </section>
       <div class="actions">
         <button class="btn primary" id="dl" type="button" disabled>Télécharger les DXF par panneau (.zip)</button>
@@ -94,10 +109,17 @@ export function mountAtelier(root: HTMLElement): () => void {
       <nav class="tabs">
         <button data-tab="sheets" class="on">Calepinage</button>
         <button data-tab="quote">Devis</button>
+        <button data-tab="stock">Chutes <em id="stockN"></em></button>
         <button data-tab="lib">Bibliothèque</button>
         <button data-tab="manual">Pièces à la main</button>
       </nav>
-      <div class="view on" data-view="sheets"><div class="sheets" id="sheets"></div></div>
+      <div class="view on" data-view="sheets"><div class="stockbar" id="stockbar"></div><div class="sheets" id="sheets"></div></div>
+      <div class="view" data-view="stock"><div class="doc">
+        <h2>Chutes en stock</h2>
+        <p class="hint">Les chutes de la bonne épaisseur sont remplies avant d’entamer un panneau neuf (la plus grande d’abord). Une chute rattachée à un panneau de la bibliothèque ne sert que pour cette matière ; « Matière libre » sert pour toute matière de la même épaisseur. Après une découpe, « Valider la découpe » dans l’onglet Calepinage retire les chutes utilisées et ajoute les nouvelles.</p>
+        <div class="tablewrap"><table class="grid" id="stockT"></table></div>
+        <div class="btnrow"><button class="btn small" id="addOffcut" type="button">+ Ajouter une chute</button></div>
+      </div></div>
       <div class="view" data-view="quote"><div class="doc" id="quote"></div></div>
       <div class="view" data-view="lib"><div class="doc">
         <h2>Bibliothèque de panneaux</h2>
@@ -221,12 +243,74 @@ export function mountAtelier(root: HTMLElement): () => void {
     renderManual(); changed();
   });
 
+  // ---------- Chutes en stock ----------
+  const renderStock = () => {
+    $('#stockN').textContent = s.offcuts.length ? String(s.offcuts.length) : '';
+    const opts = (o: Offcut) => `<option value="">Matière libre</option>` +
+      s.panels.map((p) => `<option value="${p.id}" ${p.id === o.panelId ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
+    $('#stockT').innerHTML = `<thead><tr><th>Matière</th><th>Repère</th><th>Longueur (mm)</th><th>Largeur (mm)</th><th>Épaisseur (mm)</th><th>Valeur (€)</th><th></th></tr></thead><tbody>${
+      s.offcuts.length ? s.offcuts.map((o, i) => `<tr data-i="${i}"><td><select data-c="panelId">${opts(o)}</select></td>${cell('text', 'name', o.name)}${cell('number', 'w', o.w)}${cell('number', 'h', o.h)}${cell('number', 'thickness', o.thickness)}${cell('number', 'value', o.value)}
+        <td><button class="btn ghost small" data-del type="button" title="Supprimer">✕</button></td></tr>`).join('')
+      : '<tr><td colspan="7" class="muted">Aucune chute en stock.</td></tr>'}</tbody>`;
+    $$('#stockT tbody tr[data-i]').forEach((tr) => {
+      const o = s.offcuts[Number(tr.dataset.i)];
+      tr.querySelectorAll<HTMLInputElement | HTMLSelectElement>('[data-c]').forEach((inp) => inp.addEventListener(inp instanceof HTMLSelectElement ? 'change' : 'input', () => {
+        const k = inp.dataset.c!;
+        if (k === 'panelId') {
+          o.panelId = inp.value;
+          const p = s.panels.find((x) => x.id === o.panelId);
+          // l'épaisseur suit la matière choisie
+          if (p) { o.thickness = p.thickness; (tr.querySelector('[data-c="thickness"]') as HTMLInputElement).value = String(p.thickness); }
+        } else if (k === 'name') o.name = inp.value;
+        else { const v = parseFloat(inp.value); if (!(Number.isFinite(v) && v >= 0)) return; (o as any)[k] = v; }
+        changed();
+      }));
+      tr.querySelector('[data-del]')!.addEventListener('click', () => { s.offcuts.splice(Number(tr.dataset.i), 1); renderStock(); changed(); });
+    });
+  };
+  $('#addOffcut').addEventListener('click', () => {
+    const p = s.panels[0];
+    s.offcuts.push({ id: uid(), name: `Chute ${s.offcuts.length + 1}`, w: 600, h: 400, thickness: p?.thickness ?? 6, panelId: p?.id ?? '', value: p ? Math.round((p.price * 600 * 400) / (p.w * p.h) * 100) / 100 : 0 });
+    renderStock(); changed();
+  });
+  const useOff = $<HTMLInputElement>('#useOffcuts');
+  useOff.checked = s.useOffcuts;
+  useOff.addEventListener('change', () => { s.useOffcuts = useOff.checked; changed(); });
+
+  /** Après découpe : retire les chutes utilisées, ajoute les chutes à garder */
+  const renderStockBar = () => {
+    const el = $('#stockbar');
+    if (!plan || !plan.sheets.length) { el.innerHTML = ''; return; }
+    const used = plan.sheets.filter((sh) => sh.stock);
+    const kept = plan.sheets.filter((sh) => sh.leftover);
+    el.innerHTML = `<p>${used.length ? `<strong>${used.length} chute(s) du stock</strong> utilisée(s)` : 'Aucune chute du stock utilisée'} · ${kept.length ? `<strong>${kept.length} chute(s) à garder</strong> après découpe (hachurées)` : 'aucune chute à garder'}.</p>
+      <button class="btn small" id="validate" type="button" ${used.length || kept.length ? '' : 'disabled'}>Valider la découpe : mettre le stock à jour</button>`;
+    $('#validate').addEventListener('click', () => {
+      if (!plan) return;
+      if (!confirm(`Découpe faite ? Le stock sera mis à jour (${used.length} chute(s) retirée(s), ${kept.length} ajoutée(s)) et le projet retiré de l’Atelier, pièces à la main comprises. Télécharge les DXF avant si besoin.`)) return;
+      const gone = new Set(used.map((sh) => sh.stock!.id));
+      s.offcuts = s.offcuts.filter((o) => !gone.has(o.id));
+      for (const sh of kept) {
+        const lo = sh.leftover!;
+        const panelId = sh.stock ? sh.stock.panelId : sh.panel.id;
+        const base = sh.stock ? sh.stock.name.replace(/ · reste.*$/, '') : sh.panel.name;
+        s.offcuts.push({ id: uid(), name: `${base} · reste ${job?.name ?? 'projet'}`.slice(0, 80), w: Math.floor(lo.w), h: Math.floor(lo.h), thickness: sh.thickness, panelId, value: lo.value });
+      }
+      job = null; setJob(null);
+      s.manual = [];
+      renderJob(); renderManual(); renderStock();
+      changed();
+      $('#status').textContent = 'Stock de chutes mis à jour.';
+      $('#status').className = 'status ok';
+    });
+  };
+
   // ---------- Choix du panneau par épaisseur ----------
   const renderChoice = () => {
     const el = $('#choice');
     if (!plan || !plan.groups.length) { el.innerHTML = '<p class="hint">Pas encore de pièces.</p>'; return; }
     el.innerHTML = plan.groups.map((g) => `
-      <label class="field"><span>${fmt(g.thickness, 1)} mm · ${g.pieceCount} pièce(s)${g.panel && g.sheets.length ? ` → <strong>${g.sheets.length} × ${esc(g.panel.name)}</strong>` : ''}</span>
+      <label class="field"><span>${fmt(g.thickness, 1)} mm · ${g.pieceCount} pièce(s)${g.panel && g.sheets.length ? ` → <strong>${g.newSheets ? `${g.newSheets} × ${esc(g.panel.name)}` : 'aucun panneau neuf'}</strong>${g.sheets.length > g.newSheets ? ` + ${g.sheets.length - g.newSheets} chute(s)` : ''}` : ''}</span>
         <select data-t="${g.thickness}">
           <option value="">Automatique (le moins cher)</option>
           ${g.candidates.map((p) => `<option value="${p.id}" ${!g.auto && g.panel?.id === p.id ? 'selected' : ''}>${esc(p.name)} · ${p.w}×${p.h} · ${eur(p.price)}</option>`).join('')}
@@ -247,7 +331,7 @@ export function mountAtelier(root: HTMLElement): () => void {
     el.innerHTML = plan.sheets.map((sh) => `
       <figure class="sheet">
         ${sheetSvg(sh, hue, s.machine.marginMm)}
-        <figcaption><strong>Panneau ${sh.n}</strong> · ${esc(sh.panel.name)} · ${sh.pieces.length} pièce(s) · utilisation ${fmt(sh.util * 100)} % · ${fmt(Math.min(sh.extent, Math.max(sh.panel.w, sh.panel.h)))} mm de longueur utilisés sur ${fmt(Math.max(sh.panel.w, sh.panel.h))}</figcaption>
+        <figcaption><strong>Panneau ${sh.n}</strong>${sh.stock ? ' <span class="tag">chute du stock</span>' : ''} · ${esc(sh.panel.name)} · ${sh.panel.w} × ${sh.panel.h} · ${sh.pieces.length} pièce(s) · utilisation ${fmt(sh.util * 100)} % · ${fmt(Math.min(sh.extent, Math.max(sh.panel.w, sh.panel.h)))} mm de longueur utilisés sur ${fmt(Math.max(sh.panel.w, sh.panel.h))}</figcaption>
       </figure>`).join('');
   };
 
@@ -261,8 +345,10 @@ export function mountAtelier(root: HTMLElement): () => void {
       <table class="grid ro">
         <thead><tr><th>Panneau</th><th>Qté</th><th>Pièces</th><th>Utilisation</th><th class="r">Prix des panneaux</th></tr></thead>
         <tbody>${plan.groups.filter((g) => g.panel && g.sheets.length).map((g) => {
-          const u = g.sheets.reduce((a, sh) => a + sh.pieceArea, 0) / (g.sheets.length * g.panel!.w * g.panel!.h);
-          return `<tr><td>${esc(g.panel!.name)} (${g.panel!.w} × ${g.panel!.h})</td><td>${g.sheets.length}</td><td>${g.pieceCount}</td><td>${fmt(u * 100)} %</td><td class="r">${eur(g.sheets.length * g.panel!.price)}</td></tr>`;
+          const news = g.sheets.filter((sh) => !sh.stock);
+          const u = news.reduce((a, sh) => a + sh.pieceArea, 0) / Math.max(1, news.length * g.panel!.w * g.panel!.h);
+          const row = news.length ? `<tr><td>${esc(g.panel!.name)} (${g.panel!.w} × ${g.panel!.h})</td><td>${news.length}</td><td>${news.reduce((a, sh) => a + sh.pieces.length, 0)}</td><td>${fmt(u * 100)} %</td><td class="r">${eur(news.length * g.panel!.price)}</td></tr>` : '';
+          return row + g.sheets.filter((sh) => sh.stock).map((sh) => `<tr><td>Chute du stock : ${esc(sh.panel.name)} (${sh.panel.w} × ${sh.panel.h})</td><td>1</td><td>${sh.pieces.length}</td><td>${fmt(sh.util * 100)} %</td><td class="r">${q.offcuts === 'free' ? 'offerte' : eur(sh.cost)}</td></tr>`).join('');
         }).join('')}</tbody>
       </table>
       <table class="grid ro totals">
@@ -291,7 +377,8 @@ export function mountAtelier(root: HTMLElement): () => void {
     $('#summary').innerHTML = plan.pieceCount ? `
       <dl>
         <dt>Pièces</dt><dd>${plan.pieceCount}</dd>
-        <dt>Panneaux</dt><dd>${plan.sheets.length}</dd>
+        <dt>Panneaux neufs</dt><dd>${plan.sheets.filter((sh) => !sh.stock).length}</dd>
+        ${plan.sheets.some((sh) => sh.stock) ? `<dt>Chutes du stock</dt><dd>${plan.sheets.filter((sh) => sh.stock).length}</dd>` : ''}
         <dt>Utilisation</dt><dd>${fmt(util * 100)} %</dd>
         <dt>Temps machine</dt><dd>${duration(plan.timeMin)}</dd>
         <dt>Matière</dt><dd>${eur(c.material)}</dd>
@@ -322,6 +409,7 @@ export function mountAtelier(root: HTMLElement): () => void {
         plan = e.data.plan as Plan;
         renderChoice();
         renderSheets();
+        renderStockBar();
         renderQuote();
         renderSummary();
         $('#status').textContent = plan.pieceCount ? `Calepinage calculé en ${fmt((performance.now() - t0) / 1000, 1)} s.` : '';
@@ -358,6 +446,7 @@ export function mountAtelier(root: HTMLElement): () => void {
   renderJob();
   renderLib();
   renderManual();
+  renderStock();
   compute();
 
   return () => { clearTimeout(timer); worker?.terminate(); };

@@ -30,6 +30,7 @@ Le cadrage complet (fonctionnalités, feuille de route) est dans [CADRAGE.md](CA
 | `CUT_INSIDE` | Découpe intérieure (trous) |
 | `ENGRAVE` | Gravure sur le trait : courbes fines, repères de pose, numéros |
 | `INFO` | Indications, non usinées |
+| `CUT_OFFCUT` | Atelier : recoupe de la chute à garder (en dernier, ou à la scie) |
 
 Chaque couche N porte, gravés, le contour de la couche N+1 (repère de collage) et son numéro, placé là où la couche suivante le cachera.
 
@@ -53,6 +54,8 @@ Repère d'une lame : u = profondeur depuis le dos, v = hauteur depuis le sol, x 
 5. **Télécharger les DXF par panneau** : un DXF par panneau avec les pièces déjà placées, plus le devis.
 
 Deux modes de calepinage : **formes imbriquées** (par défaut : suit le vrai contour des pièces, rotation par 90°, petites pièces logées dans les trous des grandes, calcul en arrière-plan) ou **rectangles** (MaxRects, plus rapide). Les pièces restent tournées de 0° ou 180° seulement sur un panneau avec fil.
+
+**Chutes en stock** (onglet *Chutes*) : les chutes de la bonne épaisseur sont essayées avant d'entamer un panneau neuf. L'Atelier compare plusieurs façons de les remplir (et sans elles) et garde celle qui consomme le moins de matière, chutes à garder déduites. Chaque panneau montre en hachuré la chute récupérable (calque DXF `CUT_OFFCUT` pour la recouper) ; après la découpe, **Valider la découpe** retire les chutes utilisées du stock et y ajoute les nouvelles, avec leur valeur au prorata. Dans le devis, les chutes sont comptées à leur valeur ou offertes.
 
 ## Développement
 
