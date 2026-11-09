@@ -28,25 +28,36 @@ const HOME = `
       <p>Transforme une forme en lames de bois assemblées : comptoirs, bancs, bureaux, panneaux muraux.</p>
     </a>
   </div>
+  <p class="homehelp">Besoin d’un coup de main ? Chaque réglage est expliqué dans l’<a href="#/aide">aide</a>, et le petit <span class="hq demo">?</span> à côté d’un réglage donne son explication sans quitter le module.</p>
 </div>`;
 
 async function route() {
   if (typeof unmount === 'function') unmount();
   unmount = undefined;
   const r = location.hash.replace(/^#\/?/, '');
-  document.querySelectorAll('.topnav a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#/' + r));
+  const [page, ...rest] = r.split('/');
+  document.querySelectorAll('.topnav a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === '#/' + page));
+  // les bulles d'aide se posent sur le module une fois monté
+  const withHelp = async (id: string, u: Unmount) => {
+    const { attachHelp } = await import('./help/inline');
+    const off = attachHelp(app, id);
+    return () => { off(); if (typeof u === 'function') u(); };
+  };
   if (r === 'topo') {
     app.innerHTML = '<p class="loading">Chargement…</p>';
     const { mountTopo } = await import('./topo/view');
-    unmount = mountTopo(app);
+    unmount = await withHelp('topo', mountTopo(app));
   } else if (r === 'atelier') {
     app.innerHTML = '<p class="loading">Chargement…</p>';
     const { mountAtelier } = await import('./atelier/view');
-    unmount = mountAtelier(app);
+    unmount = await withHelp('atelier', mountAtelier(app));
   } else if (r === 'lames') {
     app.innerHTML = '<p class="loading">Chargement…</p>';
     const { mountLames } = await import('./lames/view');
-    unmount = mountLames(app);
+    unmount = await withHelp('lames', mountLames(app));
+  } else if (page === 'aide') {
+    const { mountHelp } = await import('./help/page');
+    unmount = mountHelp(app, rest);
   } else {
     app.innerHTML = HOME;
   }

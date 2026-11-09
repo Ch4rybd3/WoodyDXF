@@ -75,7 +75,7 @@ export function mountAtelier(root: HTMLElement): () => void {
           <button data-v="normal">Précision normale</button><button data-v="fine">Fine (plus lent)</button>
         </div>
         <p class="hint">« Formes imbriquées » suit le vrai contour des pièces et loge les petites pièces dans les trous des grandes.</p>
-        <label class="check"><input type="checkbox" id="useOffcuts"/> Utiliser d’abord les chutes du stock</label>
+        <label class="check"><input type="checkbox" id="useOffcuts"/> <span>Utiliser d’abord les chutes du stock</span></label>
         ${num('Chute gardée si ses deux côtés font au moins', 'minOffcut', 'mm', '10')}
       </section>
       <section>

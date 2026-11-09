@@ -200,3 +200,67 @@ table.totals tr.total td { font-weight: 700; font-size: 16px; color: var(--accen
 .stockbar p { margin: 0; }
 .tabs button em { font-style: normal; font-size: 11px; margin-left: 4px; padding: 0 6px; border-radius: 99px; background: rgba(42, 157, 143, .18); }
 .tabs button em:empty { display: none; }
+
+/* Aide : bulles « ? » dans les modules */
+.hq {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: 16px; height: 16px; margin-left: 6px; border-radius: 50%; vertical-align: 1px;
+  font-size: 11px; font-weight: 700; line-height: 1; cursor: pointer; user-select: none;
+  color: var(--accent); background: #fdf1e3; border: 1px solid #efcfa8;
+}
+.hq:hover, .hq:focus-visible { background: var(--accent); color: #fff; outline: none; }
+.hq.demo { cursor: default; }
+.seg.hasq { align-items: center; }
+.seg.hasq > .hq { margin: 0 6px; }
+.hlink {
+  display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 8px;
+  border-radius: 50%; font-size: 11px; text-decoration: none; vertical-align: 1px; letter-spacing: 0;
+  color: var(--muted); border: 1px solid var(--line-faint); text-transform: none;
+}
+.hlink:hover { color: #fff; background: var(--accent); border-color: var(--accent); }
+.hpop {
+  position: fixed; z-index: 2000; padding: 12px 14px; border-radius: 10px; font-size: 13px; line-height: 1.45;
+  background: var(--panel); border: 1px solid var(--line); box-shadow: 0 10px 30px rgba(43, 33, 24, .18);
+}
+.hpop p { margin: 6px 0 0; }
+.hpop a { display: inline-block; margin-top: 8px; color: var(--accent); font-weight: 600; text-decoration: none; }
+.htip { color: #6b4f1d; background: var(--warn-bg); border-radius: 6px; padding: 6px 8px; }
+.htip::before { content: 'Conseil : '; font-weight: 600; }
+.hdef { color: var(--muted); font-size: 12px; font-weight: 400; }
+.homehelp { margin-top: 28px; color: var(--muted); }
+
+/* Aide : page dédiée */
+.helpwrap { flex: 1; min-height: 0; overflow: hidden; display: grid; grid-template-columns: 280px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+.htoc { overflow-y: auto; padding: 16px; border-right: 1px solid var(--line); background: var(--panel); font-size: 13px; }
+.htoc input { width: 100%; font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; background: #fff; }
+.htoc-mod { margin-bottom: 14px; }
+.htoc a { display: block; padding: 3px 8px; border-radius: 6px; text-decoration: none; color: var(--muted); }
+.htoc a strong { color: var(--ink); }
+.htoc a:hover { background: var(--bg); color: var(--ink); }
+.hbody { overflow-y: auto; padding: 24px 32px 80px; scroll-behavior: smooth; }
+.hbody > * { max-width: 900px; }
+.hhead h1 { margin: 0 0 6px; }
+.hhead p { color: var(--muted); margin: 0 0 8px; }
+.hmod { padding-top: 20px; }
+.hmod > h2 { font-size: 24px; margin: 18px 0 6px; padding-top: 18px; border-top: 2px solid var(--line); }
+.hlead { font-size: 15px; line-height: 1.5; }
+.hsteps { line-height: 1.6; padding-left: 22px; }
+.hsec { margin-top: 26px; }
+.hsec > h3 { font-size: 17px; margin: 0 0 6px; color: var(--accent); }
+.hsec > p { line-height: 1.5; margin: 0 0 8px; }
+.hsec dl { margin: 8px 0 0; }
+.hitem { padding: 10px 12px; border-radius: 8px; border-bottom: 1px solid var(--line); transition: background .4s; }
+.hitem dt { font-weight: 600; }
+.hitem dd { margin: 4px 0 0; line-height: 1.5; }
+.hitem dd .htip { margin: 6px 0 0; font-size: 13px; }
+.hitem.flash, .hsec.flash { background: #fdecd3; }
+.hshot { margin: 12px 0 16px; }
+.hshot img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 4px 18px rgba(43, 33, 24, .08); }
+.hshot figcaption { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.hnone { color: var(--muted); }
+.hbody.searching .hshot, .hbody.searching .hsteps, .hbody.searching .hmod > h3 { display: none; }
+@media (max-width: 760px) {
+  .helpwrap { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
+  .htoc { max-height: 38vh; border-right: 0; border-bottom: 1px solid var(--line); }
+  .hbody { padding: 16px 16px 60px; }
+}

@@ -57,6 +57,12 @@ Deux modes de calepinage : **formes imbriquées** (par défaut : suit le vrai co
 
 **Chutes en stock** (onglet *Chutes*) : les chutes de la bonne épaisseur sont essayées avant d'entamer un panneau neuf. L'Atelier compare plusieurs façons de les remplir (et sans elles) et garde celle qui consomme le moins de matière, chutes à garder déduites. Chaque panneau montre en hachuré la chute récupérable (calque DXF `CUT_OFFCUT` pour la recouper) ; après la découpe, **Valider la découpe** retire les chutes utilisées du stock et y ajoute les nouvelles, avec leur valeur au prorata. Dans le devis, les chutes sont comptées à leur valeur ou offertes.
 
+## Aide intégrée
+
+La page **Aide** (`#/aide`) explique chaque réglage des trois modules, avec sa valeur par défaut, des conseils et des captures d'écran, et une recherche. Dans les modules, le petit **?** à côté d'un réglage affiche son explication sur place ; celui d'un titre de section ouvre la page d'aide correspondante dans un nouvel onglet.
+
+Le texte vit dans un seul fichier, `src/help/content.ts`, qui alimente la page et les bulles. Les captures (`public/aide/*.webp`) se régénèrent avec `npm run dev` puis `npm run captures` (Edge ou Chrome requis).
+
 ## Développement
 
 ```bash
